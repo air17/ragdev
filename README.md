@@ -113,6 +113,39 @@ for result in results[0]:
     # You can now load the file and extract the relevant lines
 ```
 
+### Finding Symbol Usages
+
+The `find_usages` package helps you find all usages of a symbol (function, class, variable) in a Python project.
+
+#### Programmatic Usage
+
+```python
+from find_usages import index_project, find_usages
+
+# First, create an index of your project
+index_project("path/to/your/project", "usages_index.json")
+
+# Then find all usages of a symbol
+results = find_usages("path/to/your/project", "usages_index.json", "YourClass")
+
+# Process the results
+for result in results:
+    print(f"Found in {result['path']} at line {result['line']}, column {result['column']}")
+    print(f"Fully qualified name: {result['fqn']}")
+```
+
+#### Command Line Usage
+
+You can also use the package from the command line:
+
+```bash
+# Create an index
+python -m find_usages.cli --make-index path/to/your/project
+
+# Find usages of a symbol
+python -m find_usages.cli path/to/your/project YourClass
+```
+
 ## Configuration Management
 
 The project uses a centralized configuration system:
@@ -127,6 +160,7 @@ The project uses a centralized configuration system:
 - `chunker.py`: Handles parsing and chunking of Python files
 - `embeddings.py`: Manages vector embeddings and Milvus operations
 - `config.py`: Centralizes configuration management
+- `find_usages/`: Package for finding symbol usages in Python code
 - `requirements.txt`: Lists project dependencies
 
 ## Security Notes
