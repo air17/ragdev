@@ -18,8 +18,11 @@ from find_usages.finder import UsageRecord, find_usages as _find_usages
 __all__ = [
     "index_all",
     "search_code",
+    "search_code_with_snippets",
     "find_symbol_usages",
 ]
+
+from rag.snippet_reader import read_snippets
 
 
 def index_all(directory: str | os.PathLike[str] = ".") -> None:
@@ -81,6 +84,18 @@ def search_code(
     # list of hits for our single query vector.  We flatten it for convenience.
     results_nested = manager.retrieve_vectors_for_question(question, top_k=top_k)
     return results_nested[0] if results_nested else []
+
+
+def search_code_with_snippets(
+    question: str,
+    *,
+    top_k: int = 5,
+    collection_name: str = DEFAULT_COLLECTION_NAME,
+) -> List[Dict[str, Any]]:
+    """Return *top_k* code chunks that best match question, along with snippets."""
+    return read_snippets(
+        search_code(question, top_k=top_k, collection_name=collection_name)
+    )
 
 
 def find_symbol_usages(

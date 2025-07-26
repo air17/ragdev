@@ -8,6 +8,7 @@ This project implements a Retrieval-Augmented Generation (RAG) system using Milv
 - **Vector Embeddings**: Generates embeddings for code chunks using Google's Gemini API
 - **Vector Storage**: Stores embeddings and metadata in Milvus vector database
 - **Similarity Search**: Retrieves the most relevant code chunks for a given query
+- **Code Snippet Retrieval**: Returns actual code snippets along with search results for better context
 
 ## Installation
 
@@ -81,7 +82,7 @@ DEFAULT_COLLECTION_NAME=code_chunks
 ### Quick start with `main.py`
 
 ```python
-from main import index_all, search_code, find_symbol_usages
+from main import index_all, search_code, search_code_with_snippets, find_symbol_usages
 
 # 1) build both indices (vector + symbol usages)
 index_all()  # or index_all(directory="/path/to/your/project")
@@ -91,7 +92,14 @@ results = search_code("How do I parse Python files?", top_k=5)
 for res in results:
     print(res)
 
-# 3) find all references to a symbol
+# 3) semantic code search with snippets
+results_with_snippets = search_code_with_snippets("How do I parse Python files?", top_k=5)
+for res in results_with_snippets:
+    print(f"File: {res['entity']['filename']}, Lines: {res['entity']['start_line']}-{res['entity']['end_line']}")
+    print(f"Snippet:\n{res['snippet']}")
+    print("-" * 80)
+
+# 4) find all references to a symbol
 usages = find_symbol_usages(".", "YourClass")
 for u in usages:
     print(u)
@@ -123,6 +131,20 @@ for hit in hits:
     print(f"File: {hit['filename']}, Lines: {hit['start_line']}-{hit['end_line']}, score: {hit['score']}")
 ```
 
+To retrieve code chunks with the actual code snippets:
+
+```python
+from main import search_code_with_snippets
+
+hits_with_snippets = search_code_with_snippets("How do I parse Python files?", top_k=5)
+for hit in hits_with_snippets:
+    print(f"File: {hit['entity']['filename']}, Lines: {hit['entity']['start_line']}-{hit['entity']['end_line']}")
+    print(f"Score: {hit['distance']}")
+    print("Code snippet:")
+    print(hit['snippet'])
+    print("-" * 50)
+```
+
 ### Finding Symbol Usages
 
 To find all usages of a symbol:
@@ -148,8 +170,10 @@ The project uses a centralized configuration system:
 ## Project Structure
 
 - `main.py`: Convenience helpers – build indices, semantic search & find usages
-- `chunker.py`: Handles parsing and chunking of Python files
-- `embeddings.py`: Manages vector embeddings and Milvus operations
+- `rag/chunker.py`: Handles parsing and chunking of Python files
+- `rag/embeddings.py`: Manages vector embeddings and Milvus operations
+- `rag/code_indexer.py`: Handles the indexing of code files
+- `rag/snippet_reader.py`: Extracts code snippets from files based on search results
 - `config.py`: Centralizes configuration management
 - `find_usages/`: Package for finding symbol usages in Python code
 - `requirements.txt`: Lists project dependencies
