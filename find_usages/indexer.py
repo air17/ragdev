@@ -2,6 +2,7 @@ import os
 import json
 from typing import TypedDict, Optional
 import jedi
+from jedi.api.classes import Name
 
 from config import USAGES_INDEX_FILE
 
@@ -14,6 +15,7 @@ class IndexEntry(TypedDict):
     module: str  # dotted module path
     file: str  # file path
     line: int  # line number
+    end_line: int  # end line number
     column: int  # column number
 
 
@@ -51,7 +53,7 @@ def parse_file(
 
 
 def create_index_entry(
-    name_obj: jedi.api.classes.Name, module: str, file_path: str
+    name_obj: Name, module: str, file_path: str
 ) -> IndexEntry | None:
     """Create an index entry from a Jedi name object."""
     # Filter out builtins and imports
@@ -65,6 +67,7 @@ def create_index_entry(
         module=module,
         file=file_path,
         line=name_obj.line,
+        end_line=name_obj.get_definition_end_position() or name_obj.line,
         column=name_obj.column,
     )
 
