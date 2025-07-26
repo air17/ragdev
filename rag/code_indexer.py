@@ -42,8 +42,8 @@ def process_directory(
 
                 # Process each chunk
                 for chunk in chunks:
-                    start_line = chunk["start"]
-                    end_line = chunk["end"]
+                    start_line = chunk.get("start")
+                    end_line = chunk.get("end")
 
                     # Read the specific chunk content
                     with open(file_path, "r", encoding="utf-8") as f:
@@ -53,7 +53,7 @@ def process_directory(
 
                     # Add chunk to vector database
                     print(
-                        f"Adding chunk {start_line}-{end_line} ({chunk['type']}) to vector DB"
+                        f"Adding chunk {start_line}-{end_line} ({chunk.get('type')}) to vector DB"
                     )
                     manager.add_to_vector(chunk_content, rel_path, start_line, end_line)
 

@@ -31,7 +31,7 @@ def main():
             else:
                 for result in results:
                     print(
-                        f"{result['path']}:{result['line']}:{result['column']}  -> {result['fqn']}"
+                        f"{result.get('path')}:{result.get('line')}:{result.get('column')}  -> {result.get('fqn')}"
                     )
         except FileNotFoundError as e:
             print(str(e))

@@ -11,12 +11,13 @@ optionally, return the exact source code for every match.
 
 import json
 import os
-from typing import Any, TypedDict
+from typing import TypedDict
 
 import jedi
 from jedi.api.classes import Name
 
 from config import USAGES_INDEX_FILE
+from find_usages.indexer import IndexEntry
 
 
 class DefinitionRecord(TypedDict, total=False):
@@ -38,7 +39,7 @@ class DefinitionRecord(TypedDict, total=False):
     code: str
 
 
-def _load_index(index_file: str | os.PathLike) -> list[dict[str, Any]]:
+def _load_index(index_file: str | os.PathLike) -> list[IndexEntry]:
     """
     Load and return the raw JSON content produced by the indexer.
     """

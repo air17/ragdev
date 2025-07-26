@@ -7,13 +7,13 @@ query either of them without having to remember the lower-level API surface.
 """
 
 import os
-from typing import List, Dict, Any
 
 from config import DEFAULT_COLLECTION_NAME, USAGES_INDEX_FILE
 from rag.embeddings import EmbeddingManager
 from rag.code_indexer import index as _vector_index
 from find_usages.indexer import index_project as _usages_index
 from find_usages.finder import UsageRecord, find_usages as _find_usages
+from rag.snippet_reader import SearchResult, EnrichedSearchResult
 
 __all__ = [
     "index_all",
@@ -56,7 +56,7 @@ def search_code(
     *,
     top_k: int = 5,
     collection_name: str = DEFAULT_COLLECTION_NAME,
-) -> List[Dict[str, Any]]:
+) -> list[SearchResult]:
     """Return *top_k* code chunks that best match *question*.
 
     This is a thin wrapper around
@@ -73,7 +73,7 @@ def search_code(
 
     Returns
     -------
-    list[dict]
+    list[SearchResult]
         A list of result dictionaries as returned by Milvus.  Each dictionary
         contains at least ``filename``, ``start_line`` and ``end_line`` keys
         plus the similarity ``score``.
@@ -91,7 +91,7 @@ def search_code_with_snippets(
     *,
     top_k: int = 5,
     collection_name: str = DEFAULT_COLLECTION_NAME,
-) -> List[Dict[str, Any]]:
+) -> list[EnrichedSearchResult]:
     """Return *top_k* code chunks that best match question, along with snippets."""
     return read_snippets(
         search_code(question, top_k=top_k, collection_name=collection_name)
@@ -103,7 +103,7 @@ def find_symbol_usages(
     target: str,
     *,
     index_file: str = USAGES_INDEX_FILE,
-) -> List[UsageRecord]:
+) -> list[UsageRecord]:
     """Find every occurrence of *target* inside *root*.
 
     Wrapper around :pyfunc:`find_usages.finder.find_usages`.

@@ -45,7 +45,7 @@ def chunk_file(
             if current:
                 start = current[0].lineno
                 end = current[-1].end_lineno
-                chunks.append({"start": start, "end": end, "type": "Block"})
+                chunks.append(ChunkDict(start=start, end=end, type="Block"))
                 current.clear()
 
         for node in nodes:
@@ -57,11 +57,11 @@ def chunk_file(
                 # Handle classes: single chunk
                 if isinstance(node, ast.ClassDef):
                     chunks.append(
-                        {
-                            "start": node.lineno,
-                            "end": node.end_lineno,
-                            "type": "ClassDef",
-                        }
+                        ChunkDict(
+                            start=node.lineno,
+                            end=node.end_lineno,
+                            type="ClassDef",
+                        )
                     )
                     continue
 
@@ -70,23 +70,23 @@ def chunk_file(
                 # If small enough, single chunk
                 if length <= max_func_window:
                     chunks.append(
-                        {
-                            "start": node.lineno,
-                            "end": node.end_lineno,
-                            "type": "FunctionDef",
-                        }
+                        ChunkDict(
+                            start=node.lineno,
+                            end=node.end_lineno,
+                            type="FunctionDef",
+                        )
                     )
                 else:
-                    # Split function into approximately two halves
+                    # Split a function into approximately two halves
                     body = node.body
                     if not body:
                         # Edge case: function has no body
                         chunks.append(
-                            {
-                                "start": node.lineno,
-                                "end": node.end_lineno,
-                                "type": "FunctionDef",
-                            }
+                            ChunkDict(
+                                start=node.lineno,
+                                end=node.end_lineno,
+                                type="FunctionDef",
+                            )
                         )
                         continue
 
@@ -95,21 +95,21 @@ def chunk_file(
 
                     # First half: from function start to the end of the midpoint node
                     chunks.append(
-                        {
-                            "start": node.lineno,
-                            "end": body[midpoint_idx].end_lineno,
-                            "type": "FunctionDef",
-                        }
+                        ChunkDict(
+                            start=node.lineno,
+                            end=body[midpoint_idx].end_lineno,
+                            type="FunctionDef",
+                        )
                     )
 
                     # Second half: from the start of the next node to the end of the function
                     if midpoint_idx + 1 < len(body):
                         chunks.append(
-                            {
-                                "start": body[midpoint_idx + 1].lineno,
-                                "end": node.end_lineno,
-                                "type": "FunctionDef",
-                            }
+                            ChunkDict(
+                                start=body[midpoint_idx + 1].lineno,
+                                end=node.end_lineno,
+                                type="FunctionDef",
+                            )
                         )
                 continue
 

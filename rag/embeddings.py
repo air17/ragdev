@@ -1,4 +1,5 @@
 import numpy as np
+from typing import TypedDict, Any
 from google.genai import types, Client as GenAIClient
 from pymilvus import MilvusClient, DataType, CollectionSchema, FieldSchema
 from pymilvus.milvus_client import IndexParams
@@ -10,6 +11,46 @@ from config import (
     GEMINI_API_KEY,
     DEFAULT_COLLECTION_NAME,
 )
+
+
+class MilvusInsertData(TypedDict):
+    """Data structure for inserting into Milvus."""
+
+    vector: list[float]
+    filename: str
+    start_line: int
+    end_line: int
+
+
+class MilvusResponseData(TypedDict):
+    """Response data from Milvus insert operation."""
+
+    insert_count: int
+    ids: list[Any]
+    timestamp: int
+
+
+class MilvusResponse(TypedDict):
+    """Response from Milvus insert operation."""
+
+    data: MilvusResponseData
+    status: dict[str, Any]
+
+
+class MilvusSearchEntity(TypedDict):
+    """Entity data in Milvus search result."""
+
+    filename: str
+    start_line: int
+    end_line: int
+
+
+class MilvusSearchResult(TypedDict):
+    """Single search result from Milvus."""
+
+    id: int
+    distance: float
+    entity: MilvusSearchEntity
 
 
 class EmbeddingManager:
@@ -152,7 +193,7 @@ class EmbeddingManager:
 
     def insert_embedding(
         self, vector: list[float], filename: str, start_line: int, end_line: int
-    ) -> dict:
+    ) -> MilvusResponse:
         """
         Insert an embedding vector and associated metadata into a Milvus collection.
 
@@ -163,17 +204,17 @@ class EmbeddingManager:
             end_line (int): The ending line number in the file.
 
         Returns:
-            dict: The response from the Milvus insert operation.
+            MilvusResponse: The response from the Milvus insert operation.
         """
         return self.milvus.insert(
             collection_name=self.collection_name,
             data=[
-                {
-                    "vector": vector,
-                    "filename": filename,
-                    "start_line": start_line,
-                    "end_line": end_line,
-                }
+                MilvusInsertData(
+                    vector=vector,
+                    filename=filename,
+                    start_line=start_line,
+                    end_line=end_line,
+                )
             ],
         )
 
@@ -181,7 +222,7 @@ class EmbeddingManager:
         self, content: str, filename: str, start_line: int, end_line: int
     ):
         """
-        Add content to vector database with associated metadata.
+        Add content to a vector database with associated metadata.
 
         Args:
             content (str): The text content to be embedded.
@@ -200,7 +241,7 @@ class EmbeddingManager:
 
     def retrieve_vectors_for_question(
         self, question: str, top_k: int = 5
-    ) -> list[list[dict]]:
+    ) -> list[list[MilvusSearchResult]]:
         """
         Retrieve vectors from the collection that are most similar to the question.
 
@@ -209,7 +250,8 @@ class EmbeddingManager:
             top_k (int): Number of results to return.
 
         Returns:
-            list[dict]: List of matching documents with their metadata and similarity scores.
+            list[list[MilvusSearchResult]]: List of matching documents with their metadata and similarity scores.
+            The outer list represents different queries, while the inner list contains the search results for each query.
         """
         # Generate embedding for the question
         question_embedding = self.get_embedding(question)

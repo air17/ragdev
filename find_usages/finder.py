@@ -79,12 +79,12 @@ def find_usages(
             seen.add(key)
             path = ref.module_path or file
             results.append(
-                {
-                    "path": str(path),
-                    "line": ref.line,
-                    "column": ref.column,
-                    "fqn": rec["fqn"],
-                }
+                UsageRecord(
+                    path=str(path),
+                    line=ref.line,
+                    column=ref.column,
+                    fqn=rec["fqn"],
+                )
             )
 
     return results

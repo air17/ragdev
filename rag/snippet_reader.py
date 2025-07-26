@@ -22,7 +22,30 @@ an additional ``snippet`` key that holds the extracted text.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Union
+from typing import Iterable, Union, TypedDict
+
+
+class SearchResultEntity(TypedDict):
+    """Entity data in a search result."""
+
+    filename: str
+    start_line: int
+    end_line: int
+
+
+class SearchResult(TypedDict):
+    """Search result from vector database."""
+
+    id: int
+    distance: float
+    entity: SearchResultEntity
+
+
+class EnrichedSearchResult(SearchResult):
+    """Search result enriched with code snippet."""
+
+    snippet: str
+
 
 __all__ = ["read_snippets"]
 
@@ -61,8 +84,8 @@ def _read_single_snippet(file_path: Path, start: int, end: int) -> str:
 
 
 def read_snippets(
-    matches: Iterable[Dict[str, Any]], *, base_dir: Union[str, Path, None] = None
-) -> List[Dict[str, Any]]:
+    matches: Iterable[SearchResult], *, base_dir: Union[str, Path, None] = None
+) -> list[EnrichedSearchResult]:
     """Return *matches* augmented with the corresponding code snippets.
 
     Parameters
@@ -77,13 +100,13 @@ def read_snippets(
 
     Returns
     -------
-    list of dict
+    list of EnrichedSearchResult
         New list where each element is a **shallow copy** of the original
         entry plus a ``snippet`` field. Entries for which the snippet cannot
         be resolved are silently omitted.
     """
     root = Path(base_dir) if base_dir is not None else None
-    enriched_results: List[Dict[str, Any]] = []
+    enriched_results: list[EnrichedSearchResult] = []
 
     for item in matches:
         entity = item.get("entity", {})
@@ -102,8 +125,11 @@ def read_snippets(
             int(entity.get("end_line", 0)),
         )
         if snippet:
-            new_item = dict(item)
-            new_item["snippet"] = snippet
-            enriched_results.append(new_item)
+            # Create a copy of the original item as a dict
+            new_item_dict = dict(item)
+            # Add the snippet
+            new_item_dict["snippet"] = snippet
+            # Convert to EnrichedSearchResult
+            enriched_results.append(new_item_dict)  # Type coercion happens here
 
     return enriched_results
