@@ -4,6 +4,8 @@ from typing import TypedDict
 
 import jedi
 
+from config import USAGES_INDEX_FILE
+
 
 class UsageRecord(TypedDict):
     """
@@ -16,7 +18,9 @@ class UsageRecord(TypedDict):
     fqn: str
 
 
-def find_usages(root: str, target: str, index_file: str = "usages_index.json") -> list[UsageRecord]:
+def find_usages(
+    root: str, target: str, index_file: str = USAGES_INDEX_FILE
+) -> list[UsageRecord]:
     """
     Load index, resolve target to definitions, then use Jedi to find references.
 

@@ -1,6 +1,7 @@
 import argparse
 from .indexer import index_project
 from .finder import find_usages
+from config import USAGES_INDEX_FILE
 
 
 def main():
@@ -12,7 +13,7 @@ def main():
     )
     parser.add_argument("--make-index", action="store_true", help="Build index.json")
     parser.add_argument(
-        "--index-file", default="usages_index.json", help="Path to index JSON"
+        "--index-file", default=USAGES_INDEX_FILE, help="Path to index JSON"
     )
     parser.add_argument("root", nargs="?", default=".", help="Project root directory")
     parser.add_argument("target", nargs="?", help="Target name or FQN to find usages")

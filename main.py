@@ -9,7 +9,7 @@ query either of them without having to remember the lower-level API surface.
 import os
 from typing import List, Dict, Any
 
-from config import DEFAULT_COLLECTION_NAME
+from config import DEFAULT_COLLECTION_NAME, USAGES_INDEX_FILE
 from rag.embeddings import EmbeddingManager
 from rag.code_indexer import index as _vector_index
 from find_usages.indexer import index_project as _usages_index
@@ -102,7 +102,7 @@ def find_symbol_usages(
     root: str | os.PathLike[str],
     target: str,
     *,
-    index_file: str = "usages_index.json",
+    index_file: str = USAGES_INDEX_FILE,
 ) -> List[UsageRecord]:
     """Find every occurrence of *target* inside *root*.
 

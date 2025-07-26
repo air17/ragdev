@@ -2,8 +2,10 @@ import os
 import json
 import jedi
 
+from config import USAGES_INDEX_FILE
 
-def index_project(root_path: str, out_file: str = "usages_index.json") -> None:
+
+def index_project(root_path: str, out_file: str = USAGES_INDEX_FILE) -> None:
     """
     Walk through all .py files under root_path, collect all definitions (classes, functions, variables)
     using Jedi, and write an index file as JSON.
