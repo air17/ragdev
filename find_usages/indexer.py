@@ -66,7 +66,7 @@ def index_project(root_path: str, out_file: str = "usages_index.json") -> None:
                             "column": name.column,
                         }
                     )
-    # write index
+    # write index, overwrite the index file if it already exists
     with open(out_file, "w", encoding="utf-8") as f:
         json.dump(index, f, indent=2)
     print(f"Index written to {out_file} ({len(index)} entries)")

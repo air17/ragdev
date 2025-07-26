@@ -78,81 +78,63 @@ DEFAULT_COLLECTION_NAME=code_chunks
 
 ## Usage
 
+### Quick start with `main.py`
+
+```python
+from main import index_all, search_code, find_symbol_usages
+
+# 1) build both indices (vector + symbol usages)
+index_all()  # or index_all(directory="/path/to/your/project")
+
+# 2) semantic code search
+results = search_code("How do I parse Python files?", top_k=5)
+for res in results:
+    print(res)
+
+# 3) find all references to a symbol
+usages = find_symbol_usages(".", "YourClass")
+for u in usages:
+    print(u)
+```
+
 ### Indexing Code Files
 
 To index Python files in a directory:
 
 ```python
-from main import index
+from main import index_all
 
-# Index files in the current directory
-index()
+# Index files in the current directory (builds both indices)
+index_all()
 
 # Index files in a specific directory
-index(directory="/path/to/your/code")
+index_all(directory="/path/to/your/code")
 ```
-
-This will:
-1. Create a Milvus collection (or reset an existing one)
-2. Process all Python files in the specified directory
-3. Chunk the files into manageable segments
-4. Generate embeddings for each chunk
-5. Store the embeddings and metadata in Milvus
 
 ### Retrieving Similar Code
 
 To retrieve code chunks similar to a query:
 
 ```python
-from embeddings import EmbeddingManager
+from main import search_code
 
-# Initialize the embedding manager
-manager = EmbeddingManager(collection_name="ragdev")
-
-# Retrieve vectors for a question
-results = manager.retrieve_vectors_for_question(
-    question="How do I parse Python files?",
-    top_k=5  # Number of results to return
-)
-
-# Process the results
-for result in results[0]:
-    print(f"File: {result['filename']}, Lines: {result['start_line']}-{result['end_line']}")
-    print(f"Similarity score: {result['score']}")
-    # You can now load the file and extract the relevant lines
+hits = search_code("How do I parse Python files?", top_k=5)
+for hit in hits:
+    print(f"File: {hit['filename']}, Lines: {hit['start_line']}-{hit['end_line']}, score: {hit['score']}")
 ```
 
 ### Finding Symbol Usages
 
-The `find_usages` package helps you find all usages of a symbol (function, class, variable) in a Python project.
-
-#### Programmatic Usage
+To find all usages of a symbol:
 
 ```python
-from find_usages import index_project, find_usages
+from main import find_symbol_usages
 
-# First, create an index of your project
-index_project("path/to/your/project", "usages_index.json")
+# Assuming the index has been built already with index_all()
+results = find_symbol_usages("path/to/your/project", "YourClass")
 
-# Then find all usages of a symbol
-results = find_usages("path/to/your/project", "usages_index.json", "YourClass")
-
-# Process the results
-for result in results:
-    print(f"Found in {result['path']} at line {result['line']}, column {result['column']}")
-    print(f"Fully qualified name: {result['fqn']}")
-```
-
-#### Command Line Usage
-
-You can also use the package from the command line:
-
-```bash
-# Create an index
-python -m find_usages.cli --make-index path/to/your/project
-
-# Find usages of a symbol
-python -m find_usages.cli path/to/your/project YourClass
+for r in results:
+    print(f"Found in {r['path']} at line {r['line']}, column {r['column']}")
 ```
 
 ## Configuration Management
@@ -165,7 +147,7 @@ The project uses a centralized configuration system:
 
 ## Project Structure
 
-- `main.py`: Main entry point for indexing files
+- `main.py`: Convenience helpers – build indices, semantic search & find usages
 - `chunker.py`: Handles parsing and chunking of Python files
 - `embeddings.py`: Manages vector embeddings and Milvus operations
 - `config.py`: Centralizes configuration management
@@ -177,11 +159,3 @@ The project uses a centralized configuration system:
 - Never commit your `.env` file to version control
 - The `.env` file is already included in `.gitignore`
 - For production deployments, use system environment variables or a secure secrets management service
-
-## License
-
-[Specify your license here]
-
-## Contributing
-
-[Add contribution guidelines if applicable]
