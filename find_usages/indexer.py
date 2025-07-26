@@ -17,6 +17,7 @@ class IndexEntry(TypedDict):
     line: int  # line number
     end_line: int  # end line number
     column: int  # column number
+    type: str  # type of the name
 
 
 def is_test_directory(dir_name: str) -> bool:
@@ -61,14 +62,21 @@ def create_index_entry(
     if name_obj.type not in valid_types:
         return None
 
+    end_line: int | None = (
+        name_obj.get_definition_end_position()[0]
+        if name_obj.get_definition_end_position()
+        else None
+    )
+
     return IndexEntry(
         name=name_obj.name,
         fqn=f"{module}.{name_obj.name}",
         module=module,
         file=file_path,
         line=name_obj.line,
-        end_line=name_obj.get_definition_end_position() or name_obj.line,
+        end_line=end_line or name_obj.line,
         column=name_obj.column,
+        type=name_obj.type,
     )
 
 

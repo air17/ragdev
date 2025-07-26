@@ -11,29 +11,17 @@ optionally, return the exact source code for every match.
 
 import json
 import os
-from typing import TypedDict
-
-import jedi
-from jedi.api.classes import Name
 
 from config import USAGES_INDEX_FILE
 from find_usages.indexer import IndexEntry
 
 
-class DefinitionRecord(TypedDict, total=False):
+class DefinitionRecord(IndexEntry, total=False):
     """
     A single definition entry returned by ``find_definitions``.
     The layout mirrors the structure written by the indexer with the addition
     of an optional ``code`` field containing the definition's source code.
     """
-
-    # mandatory fields – they always exist in the index file
-    name: str
-    fqn: str
-    module: str
-    file: str
-    line: int
-    column: int
 
     # optional – filled only when `include_code=True`
     code: str
@@ -52,25 +40,31 @@ def _load_index(index_file: str | os.PathLike) -> list[IndexEntry]:
         return json.load(fh)
 
 
-def _extract_definition_code(
-    file_path: str | os.PathLike, line: int, column: int
+def _read_definition_code(
+    file_path: str | os.PathLike, line: int, end_line: int
 ) -> str | None:
     """
-    Use Jedi to obtain the exact source code for a definition located at the
-    given line/column.  Returns ``None`` if Jedi fails for any reason.
+    Read the source code for a definition directly from the file using the
+    line and end_line information from the index. Returns ``None`` if the
+    file cannot be read for any reason.
     """
     try:
-        script = jedi.Script(path=str(file_path))
-        # Using `infer` would also work here, but `get_names` is cheap and allows
-        # direct coordinate matching which is immune to ambiguities.
-        name_obj: Name
-        for name_obj in script.get_names(all_scopes=True, definitions=True):
-            if name_obj.line == line:
-                # unwrap the Name -> parso leaf -> parent (= funcdef / classdef)
-                return name_obj._name.tree_name.parent.get_code().rstrip()
+        with open(file_path, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+
+        # Convert from 1-based to 0-based indexing
+        start_idx = line - 1
+        end_idx = end_line
+
+        if start_idx < 0 or start_idx >= len(lines) or end_idx > len(lines):
+            print(f"[find_block] Invalid line range for {file_path}: {line}-{end_line}")
+            return None
+
+        code_lines = lines[start_idx:end_idx]
+        return "".join(code_lines).rstrip()
 
     except Exception as exc:  # pragma: no cover  (best-effort – don't crash)
-        print(f"[find_block] Jedi failed while parsing {file_path}: {exc}")
+        print(f"[find_block] Failed to read {file_path}: {exc}")
 
     return None
 
@@ -79,7 +73,7 @@ def find_definitions(
     target: str,
     *,
     index_file: str | os.PathLike = USAGES_INDEX_FILE,
-    include_code: bool = False,
+    include_code: bool = True,
 ) -> list[DefinitionRecord]:
     """
     Locate **classes, functions, or methods** whose *simple name* equals
@@ -94,8 +88,8 @@ def find_definitions(
         Path to the JSON file produced by :pyfunc:`indexer.index_project`.
     include_code:
         When *True*, an additional ``"code"`` key with the full source snippet
-        will be included for every record.  This requires parsing each source
-        file with Jedi and is therefore a bit slower.
+        will be included for every record.  This reads the source file directly
+        using the line and end_line information from the index.
 
     Returns
     -------
@@ -104,10 +98,10 @@ def find_definitions(
         query.  If ``include_code`` is *True*, the ``code`` field is guaranteed
         to be present (but may be ``""`` if Jedi could not extract it).
     """
-    index = _load_index(index_file)
+    index: list[IndexEntry] = _load_index(index_file)
 
     # simple heuristics: exact simple name match *or* trailing FQN match
-    matches = [
+    matches: list[IndexEntry] = [
         rec for rec in index if rec["name"] == target or rec["fqn"].endswith(target)
     ]
 
@@ -123,17 +117,16 @@ def find_definitions(
             continue
         seen.add(key)
 
-        out: DefinitionRecord = {
-            "name": rec["name"],
-            "fqn": rec["fqn"],
-            "module": rec["module"],
-            "file": rec["file"],
-            "line": rec["line"],
-            "column": rec["column"],
-        }
+        # ignore imports
+        if rec["type"] in ("class", "function") and rec["line"] == rec["end_line"]:
+            continue
+
+        out: DefinitionRecord = rec.copy()
 
         if include_code:
-            code = _extract_definition_code(rec["file"], rec["line"], rec["column"])
+            # Use end_line from an index if available, otherwise estimate it as line + 1
+            end_line = rec.get("end_line", rec["line"] + 1)
+            code = _read_definition_code(rec["file"], rec["line"], end_line)
             out["code"] = code or ""
 
         results.append(out)
