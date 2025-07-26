@@ -8,7 +8,9 @@ class ChunkDict(TypedDict):
     type: Literal["FunctionDef", "ClassDef", "Block"]
 
 
-def chunk_file(path: str, max_lines: int = 30, max_func_lines: int = 50) -> list[ChunkDict]:
+def chunk_file(
+    path: str, max_lines: int = 30, max_func_lines: int = 50
+) -> list[ChunkDict]:
     """
     Parse a Python file and split it into chunks.
 
@@ -43,7 +45,7 @@ def chunk_file(path: str, max_lines: int = 30, max_func_lines: int = 50) -> list
             if current:
                 start = current[0].lineno
                 end = current[-1].end_lineno
-                chunks.append({'start': start, 'end': end, 'type': 'Block'})
+                chunks.append({"start": start, "end": end, "type": "Block"})
                 current.clear()
 
         for node in nodes:
@@ -54,51 +56,61 @@ def chunk_file(path: str, max_lines: int = 30, max_func_lines: int = 50) -> list
 
                 # Handle classes: single chunk
                 if isinstance(node, ast.ClassDef):
-                    chunks.append({
-                        'start': node.lineno,
-                        'end': node.end_lineno,
-                        'type': 'ClassDef'
-                    })
+                    chunks.append(
+                        {
+                            "start": node.lineno,
+                            "end": node.end_lineno,
+                            "type": "ClassDef",
+                        }
+                    )
                     continue
 
                 # Handle functions
                 length = node.end_lineno - node.lineno + 1
                 # If small enough, single chunk
                 if length <= max_func_window:
-                    chunks.append({
-                        'start': node.lineno,
-                        'end': node.end_lineno,
-                        'type': 'FunctionDef'
-                    })
+                    chunks.append(
+                        {
+                            "start": node.lineno,
+                            "end": node.end_lineno,
+                            "type": "FunctionDef",
+                        }
+                    )
                 else:
                     # Split function into approximately two halves
                     body = node.body
                     if not body:
                         # Edge case: function has no body
-                        chunks.append({
-                            'start': node.lineno,
-                            'end': node.end_lineno,
-                            'type': 'FunctionDef'
-                        })
+                        chunks.append(
+                            {
+                                "start": node.lineno,
+                                "end": node.end_lineno,
+                                "type": "FunctionDef",
+                            }
+                        )
                         continue
 
                     # Find the midpoint node index
                     midpoint_idx = len(body) // 2
 
                     # First half: from function start to the end of the midpoint node
-                    chunks.append({
-                        'start': node.lineno,
-                        'end': body[midpoint_idx].end_lineno,
-                        'type': 'FunctionDef'
-                    })
+                    chunks.append(
+                        {
+                            "start": node.lineno,
+                            "end": body[midpoint_idx].end_lineno,
+                            "type": "FunctionDef",
+                        }
+                    )
 
                     # Second half: from the start of the next node to the end of the function
                     if midpoint_idx + 1 < len(body):
-                        chunks.append({
-                            'start': body[midpoint_idx + 1].lineno,
-                            'end': node.end_lineno,
-                            'type': 'FunctionDef'
-                        })
+                        chunks.append(
+                            {
+                                "start": body[midpoint_idx + 1].lineno,
+                                "end": node.end_lineno,
+                                "type": "FunctionDef",
+                            }
+                        )
                 continue
 
             # Other nodes: group into blocks

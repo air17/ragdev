@@ -4,7 +4,12 @@ from pymilvus import MilvusClient, DataType, CollectionSchema, FieldSchema
 from pymilvus.milvus_client import IndexParams
 from pymilvus.milvus_client.index import IndexParam
 
-from config import MILVUS_ENDPOINT, MILVUS_TOKEN, GEMINI_API_KEY, DEFAULT_COLLECTION_NAME
+from config import (
+    MILVUS_ENDPOINT,
+    MILVUS_TOKEN,
+    GEMINI_API_KEY,
+    DEFAULT_COLLECTION_NAME,
+)
 
 
 class EmbeddingManager:
@@ -23,7 +28,9 @@ class EmbeddingManager:
             milvus_token (str): Milvus authentication token
             gemini_api_key (str): Gemini API key
         """
-        self.milvus: MilvusClient = MilvusClient(uri=milvus_endpoint, token=milvus_token)
+        self.milvus: MilvusClient = MilvusClient(
+            uri=milvus_endpoint, token=milvus_token
+        )
         self.gemini: GenAIClient = GenAIClient(api_key=gemini_api_key)
         self.collection_name: str = collection_name
 
@@ -39,10 +46,7 @@ class EmbeddingManager:
         """
         self.milvus.drop_collection(collection_name=self.collection_name)
 
-    def create_collection_if_not_exists(
-        self,
-        vector_dim: int = 768
-    ) -> bool:
+    def create_collection_if_not_exists(self, vector_dim: int = 768) -> bool:
         """
         Create a Milvus collection if it doesn't already exist.
 
@@ -62,24 +66,50 @@ class EmbeddingManager:
         # Collection schema definition
         schema: CollectionSchema = CollectionSchema(
             fields=[
-                FieldSchema(name="id", description="ID", dtype=DataType.INT64, is_primary=True, auto_id=True),
-                FieldSchema(name="vector", description="Embedding vector", dtype=DataType.FLOAT_VECTOR, dim=vector_dim),
-                FieldSchema(name="filename", description="Source file name", dtype=DataType.VARCHAR, max_length=255),
-                FieldSchema(name="start_line", description="Starting line number", dtype=DataType.INT16),
-                FieldSchema(name="end_line", description="Ending line number", dtype=DataType.INT16),
+                FieldSchema(
+                    name="id",
+                    description="ID",
+                    dtype=DataType.INT64,
+                    is_primary=True,
+                    auto_id=True,
+                ),
+                FieldSchema(
+                    name="vector",
+                    description="Embedding vector",
+                    dtype=DataType.FLOAT_VECTOR,
+                    dim=vector_dim,
+                ),
+                FieldSchema(
+                    name="filename",
+                    description="Source file name",
+                    dtype=DataType.VARCHAR,
+                    max_length=255,
+                ),
+                FieldSchema(
+                    name="start_line",
+                    description="Starting line number",
+                    dtype=DataType.INT16,
+                ),
+                FieldSchema(
+                    name="end_line",
+                    description="Ending line number",
+                    dtype=DataType.INT16,
+                ),
             ],
             enable_dynamic_field=False,
         )
-        index_params = IndexParams([
-            IndexParam(
-                field_name="vector",
-                index_type="HNSW",
-                index_name="hnsw_index",
-                metric_type="COSINE",
-                M=64,
-                efConstruction=100,
-            )
-        ])
+        index_params = IndexParams(
+            [
+                IndexParam(
+                    field_name="vector",
+                    index_type="HNSW",
+                    index_name="hnsw_index",
+                    metric_type="COSINE",
+                    M=64,
+                    efConstruction=100,
+                )
+            ]
+        )
 
         self.milvus.create_collection(
             collection_name=self.collection_name,
@@ -91,7 +121,9 @@ class EmbeddingManager:
         print(f"Created collection '{self.collection_name}'")
         return True
 
-    def get_embedding(self, text: str, task_type: str = "RETRIEVAL_DOCUMENT") -> list[float]:
+    def get_embedding(
+        self, text: str, task_type: str = "RETRIEVAL_DOCUMENT"
+    ) -> list[float]:
         """
         Generate a normalized embedding vector for the given text using the GenAI client.
 
@@ -108,20 +140,18 @@ class EmbeddingManager:
             config=types.EmbedContentConfig(
                 output_dimensionality=768,
                 task_type=task_type,
-            )
+            ),
         )
         [embedding_obj] = result.embeddings
         embedding_values_np: np.array = np.array(embedding_obj.values)
-        normed_embedding: list[float] = (embedding_values_np / np.linalg.norm(embedding_values_np)).tolist()
+        normed_embedding: list[float] = (
+            embedding_values_np / np.linalg.norm(embedding_values_np)
+        ).tolist()
 
         return normed_embedding
 
     def insert_embedding(
-        self,
-        vector: list[float],
-        filename: str,
-        start_line: int,
-        end_line: int
+        self, vector: list[float], filename: str, start_line: int, end_line: int
     ) -> dict:
         """
         Insert an embedding vector and associated metadata into a Milvus collection.
@@ -137,15 +167,19 @@ class EmbeddingManager:
         """
         return self.milvus.insert(
             collection_name=self.collection_name,
-            data=[{
-                "vector": vector,
-                "filename": filename,
-                "start_line": start_line,
-                "end_line": end_line,
-            }]
+            data=[
+                {
+                    "vector": vector,
+                    "filename": filename,
+                    "start_line": start_line,
+                    "end_line": end_line,
+                }
+            ],
         )
 
-    def add_to_vector(self, content: str, filename: str, start_line: int, end_line: int):
+    def add_to_vector(
+        self, content: str, filename: str, start_line: int, end_line: int
+    ):
         """
         Add content to vector database with associated metadata.
 
@@ -165,9 +199,7 @@ class EmbeddingManager:
         )
 
     def retrieve_vectors_for_question(
-        self,
-        question: str,
-        top_k: int = 5
+        self, question: str, top_k: int = 5
     ) -> list[list[dict]]:
         """
         Retrieve vectors from the collection that are most similar to the question.

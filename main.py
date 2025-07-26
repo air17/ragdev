@@ -43,17 +43,19 @@ def process_directory(
 
             # Process each chunk
             for chunk in chunks:
-                start_line = chunk['start']
-                end_line = chunk['end']
+                start_line = chunk["start"]
+                end_line = chunk["end"]
 
                 # Read the specific chunk content
-                with open(file_path, 'r', encoding='utf-8') as f:
+                with open(file_path, "r", encoding="utf-8") as f:
                     all_lines = f.readlines()
                     # Convert to 0-based indexing for list slicing
-                    chunk_content = ''.join(all_lines[start_line - 1:end_line])
+                    chunk_content = "".join(all_lines[start_line - 1 : end_line])
 
                 # Add chunk to vector database
-                print(f"Adding chunk {start_line}-{end_line} ({chunk['type']}) to vector DB")
+                print(
+                    f"Adding chunk {start_line}-{end_line} ({chunk['type']}) to vector DB"
+                )
                 manager.add_to_vector(chunk_content, filename, start_line, end_line)
 
         except Exception as e:

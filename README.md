@@ -30,6 +30,15 @@ pip install -r requirements.txt
 pip install google-generativeai  # For Gemini API
 ```
 
+4. Set up pre-commit hooks (recommended for development):
+
+```bash
+pip install pre-commit
+pre-commit install
+```
+
+This will ensure code quality checks run automatically before each commit.
+
 ## Environment Setup
 
 This project uses environment variables to manage configuration and secrets. Follow these steps to set up your environment:
