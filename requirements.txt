@@ -1,4 +1,5 @@
+jedi
 numpy
 pymilvus
 python-dotenv
-jedi
+ripgrepy
