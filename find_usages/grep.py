@@ -11,14 +11,16 @@ def search_codebase(query: str, path: str = ".") -> str:
 
     Returns:
         String containing search results with filenames and line numbers.
-        Excludes files in 'tests' directories and files starting with 'test'.
+        Excludes files in 'tests' directories, files starting with 'test', and hidden files.
     """
     results: RipGrepOut = (
         Ripgrepy(query, path)
         .with_filename()
         .line_number()
-        .glob("!**/tests/**")
-        .glob("!**/test*.py")
+        .glob("!**/tests/**")  # skip tests/ subtrees
+        .glob("!**/test*.py")  # skip individual test_*.py files
+        .glob("!**/.*")  # skip hidden files/dirs
+        .glob("!**/__*__/**")  # skip any __name__/ directory
         .run()
     )
 

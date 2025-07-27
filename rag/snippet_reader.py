@@ -1,26 +1,3 @@
-"""rag.snippet_reader
-=====================
-Utility to extract code snippets from files based on search-result metadata.
-
-Typical search-result element::
-
-    {
-        "id": 459604326231119371,
-        "distance": 0.7433037757873535,
-        "entity": {
-            "filename": "main.py",
-            "start_line": 25,
-            "end_line": 48
-        }
-    }
-
-The :func:`read_snippets` helper below reads *filename* between *start_line* and
-*end_line* (inclusive) for each entry and returns a list of dictionaries with
-an additional ``snippet`` key that holds the extracted text.
-"""
-
-from __future__ import annotations
-
 from pathlib import Path
 from typing import Iterable, Union
 
@@ -34,11 +11,6 @@ class EnrichedSearchResult(SearchResult, total=False):
 
 
 __all__ = ["read_snippets"]
-
-
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
 
 
 def _read_single_snippet(file_path: Path, start: int, end: int) -> str:
@@ -62,11 +34,6 @@ def _read_single_snippet(file_path: Path, start: int, end: int) -> str:
 
     # Convert to 0-indexed slice; *end* is inclusive so use end
     return "".join(lines[start - 1 : end])
-
-
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
 
 
 def read_snippets(

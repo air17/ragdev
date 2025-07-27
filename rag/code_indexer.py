@@ -15,6 +15,7 @@ def process_directory(
 ) -> None:
     """
     Process all files in a directory and its subdirectories, chunk them, and add them to the vector database.
+    Skips test folders and files starting with 'test'.
 
     Args:
         manager (EmbeddingManager): Instance of the embedding manager to handle vector DB operations.
@@ -28,11 +29,18 @@ def process_directory(
     print(f"Processing files in {abs_directory}")
 
     for root, dirs, files in os.walk(abs_directory):
+        # In-place pruning of directories so os.walk() never descends into them
+        dirs[:] = [d for d in dirs if not (d.startswith("test") or d.startswith("."))]
         for filename in files:
             file_path = os.path.join(root, filename)
 
             file_ext = os.path.splitext(filename)[1].lower()
             if file_ext not in file_extensions:
+                continue
+
+            # Skip test files
+            if filename.lower().startswith("test_") or "tests/" in filename.lower():
+                print(f"Skipping test file: {filename}")
                 continue
 
             rel_path = os.path.relpath(file_path, abs_directory)

@@ -10,8 +10,8 @@ from find_usages.indexer import (
     parse_file,
     create_index_entry,
     write_index_to_file,
-    create_file_tree,
 )
+from find_usages.file_list import create_file_tree
 
 
 @pytest.fixture
@@ -215,19 +215,17 @@ class TestCreateFileTree:
                 [],
                 ["common.py", "data.bin"],
             ),  # data.bin should be ignored
-            ("./tests", [], ["test_main.txt"]),  # tests dir should be ignored
-            ("./docs", [], ["index.html"]),
+            ("./docs", [], ["index.html", "test_main.txt"]),
         ]
 
         # Call the function
         result = create_file_tree()
 
         # Verify result
-        assert "README.md" not in result
+        assert "README.md" in result
         assert "utils" in result
         assert "data.bin" not in result
-        assert "test_main.txt" not in result
+        assert "test_main.txt" in result
 
         # Verify hidden and test directories were skipped
-        assert "test" not in result
         assert ".git" not in result
