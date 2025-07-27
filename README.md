@@ -38,7 +38,7 @@ pip install pre-commit
 pre-commit install
 ```
 
-This will ensure code quality checks run automatically before each commit.
+This will ensure code quality checks run automatically before each commit and tests run before each push.
 
 ## Environment Setup
 
@@ -176,7 +176,59 @@ The project uses a centralized configuration system:
 - `rag/snippet_reader.py`: Extracts code snippets from files based on search results
 - `config.py`: Centralizes configuration management
 - `find_usages/`: Package for finding symbol usages in Python code
+- `tests/`: Project-level tests
+- `rag/tests/`: Tests for the RAG module
+- `find_usages/tests/`: Tests for the find_usages module
 - `requirements.txt`: Lists project dependencies
+
+## Testing
+
+This project uses pytest for testing. Tests are organized in a modular structure:
+
+- Project-level tests in the `tests/` directory
+- Module-specific tests in `rag/tests/` and `find_usages/tests/` directories
+
+### Running Tests
+
+To run all tests:
+
+```bash
+pytest
+```
+
+To run tests for a specific module:
+
+```bash
+pytest rag/tests/
+pytest find_usages/tests/
+```
+
+## Pre-commit Hooks
+
+This project uses pre-commit hooks to ensure code quality. The following hooks are configured:
+
+### Standard Hooks
+- `end-of-file-fixer`: Ensures files end with a newline
+- `trailing-whitespace`: Removes trailing whitespace
+- `detect-private-key`: Prevents committing private keys
+- `requirements-txt-fixer`: Sorts requirements.txt
+- `check-docstring-first`: Ensures docstrings come before code
+
+### Code Quality Hooks
+- `ruff`: Python linter with auto-fix capability
+- `ruff-format`: Python code formatter
+
+### Testing Hooks
+- `pytest`: Runs all tests on push (not on commit)
+
+### Installing Pre-commit Hooks
+
+```bash
+pip install pre-commit
+pre-commit install
+```
+
+This will ensure code quality checks run automatically before each commit, and tests run before each push.
 
 ## Security Notes
 

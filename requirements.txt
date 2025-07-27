@@ -1,5 +1,6 @@
 jedi
 numpy
 pymilvus
+pytest
 python-dotenv
 ripgrepy
