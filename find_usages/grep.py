@@ -11,7 +11,15 @@ def search_codebase(query: str, path: str = ".") -> str:
 
     Returns:
         String containing search results with filenames and line numbers.
+        Excludes files in 'tests' directories and files starting with 'test'.
     """
-    results: RipGrepOut = Ripgrepy(query, path).with_filename().line_number().run()
+    results: RipGrepOut = (
+        Ripgrepy(query, path)
+        .with_filename()
+        .line_number()
+        .glob("!**/tests/**")
+        .glob("!**/test*.py")
+        .run()
+    )
 
     return results.as_string
