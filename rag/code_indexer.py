@@ -1,6 +1,7 @@
 import os
 
 from config import DEFAULT_COLLECTION_NAME
+from find_usages.read_file import read_file
 from .chunker import chunk_file
 from .embeddings import EmbeddingManager
 
@@ -17,12 +18,12 @@ def process_directory(
 
     Args:
         manager (EmbeddingManager): Instance of the embedding manager to handle vector DB operations.
-        directory (str): Directory path to process, defaults to current directory.
+        directory (str): Directory path to process, defaults to the current directory.
         file_extensions (tuple[str]): List of file extensions to process.
         max_lines (int): Maximum number of lines for a regular chunk.
         max_func_lines (int): Maximum number of lines for a function chunk.
     """
-    # Get absolute path if relative path is provided
+    # Get an absolute path if a relative path is provided
     abs_directory = os.path.abspath(directory)
     print(f"Processing files in {abs_directory}")
 
@@ -45,11 +46,7 @@ def process_directory(
                     start_line = chunk.get("start")
                     end_line = chunk.get("end")
 
-                    # Read the specific chunk content
-                    with open(file_path, "r", encoding="utf-8") as f:
-                        all_lines = f.readlines()
-                        # Convert to 0-based indexing for list slicing
-                        chunk_content = "".join(all_lines[start_line - 1 : end_line])
+                    chunk_content: str = read_file(file_path, start_line, end_line)
 
                     # Add chunk to vector database
                     print(
@@ -66,11 +63,12 @@ def index(directory: str = ".", collection_name: str = DEFAULT_COLLECTION_NAME) 
     Main function to process files and add them to the vector database.
 
     Args:
-        directory (str): Directory path to process, defaults to current directory.
+        directory (str): Directory path to process, defaults to the current directory.
+        collection_name (str): Name of the collection to use in the vector database.
     """
     manager: EmbeddingManager = EmbeddingManager(collection_name=collection_name)
 
-    # Create collection if it doesn't exist
+    # Create a collection if it doesn't exist
     if not manager.create_collection_if_not_exists():
         print(f"Cleaning up existing collection: {manager.collection_name}")
         manager.drop_collection()
