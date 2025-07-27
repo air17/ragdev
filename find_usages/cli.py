@@ -25,7 +25,7 @@ def main():
         if not args.target:
             parser.error("Target required when not building index")
         try:
-            results = find_usages(args.root, args.target, args.index_file)
+            results = find_usages(args.target, args.root, args.index_file)
             if not results:
                 print(f"No usages found for '{args.target}'")
             else:

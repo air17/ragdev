@@ -19,7 +19,7 @@ class UsageRecord(TypedDict):
 
 
 def find_usages(
-    root: str, target: str, index_file: str = USAGES_INDEX_FILE
+    target: str, root: str = ".", index_file: str = USAGES_INDEX_FILE
 ) -> list[UsageRecord]:
     """
     Load index, resolve target to definitions, then use Jedi to find references.

@@ -22,26 +22,12 @@ an additional ``snippet`` key that holds the extracted text.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Iterable, Union, TypedDict
+from typing import Iterable, Union
+
+from rag.embeddings import MilvusSearchResult as SearchResult
 
 
-class SearchResultEntity(TypedDict):
-    """Entity data in a search result."""
-
-    filename: str
-    start_line: int
-    end_line: int
-
-
-class SearchResult(TypedDict):
-    """Search result from vector database."""
-
-    id: int
-    distance: float
-    entity: SearchResultEntity
-
-
-class EnrichedSearchResult(SearchResult):
+class EnrichedSearchResult(SearchResult, total=False):
     """Search result enriched with code snippet."""
 
     snippet: str
@@ -126,7 +112,7 @@ def read_snippets(
         )
         if snippet:
             # Create a copy of the original item as a dict
-            new_item_dict = dict(item)
+            new_item_dict = EnrichedSearchResult(item)
             # Add the snippet
             new_item_dict["snippet"] = snippet
             # Convert to EnrichedSearchResult

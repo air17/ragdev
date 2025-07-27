@@ -42,12 +42,12 @@ class TestFindUsages:
     @patch("os.path.isfile")
     @patch("builtins.open", new_callable=mock_open)
     def test_find_usages_file_not_found(self, mock_file, mock_isfile):
-        # Setup mock for index file not found
+        # Setup mock for an index file not found
         mock_isfile.return_value = False
 
         # Call the function and verify it raises FileNotFoundError
         with pytest.raises(FileNotFoundError):
-            find_usages("root_dir", "TestClass")
+            find_usages(root="root_dir", target="TestClass")
 
     @patch("os.path.isfile")
     @patch("builtins.open")
@@ -61,7 +61,7 @@ class TestFindUsages:
         )
 
         # Call the function with a target that doesn't match any definitions
-        result = find_usages("root_dir", "NonExistentClass")
+        result = find_usages(root="root_dir", target="NonExistentClass")
 
         # Verify empty result
         assert result == []
@@ -96,7 +96,7 @@ class TestFindUsages:
         mock_jedi_script.get_references.return_value = [ref1, ref2]
 
         # Call the function
-        result = find_usages("root_dir", "TestClass")
+        result = find_usages(root="root_dir", target="TestClass")
 
         # Verify jedi script was created and references were fetched
         mock_jedi_project.assert_called_once_with(path="root_dir")
@@ -138,7 +138,7 @@ class TestFindUsages:
         mock_jedi_script.get_references.return_value = [ref]
 
         # Call the function with fully qualified name
-        result = find_usages("root_dir", "module.other_func")
+        result = find_usages(root="root_dir", target="module.other_func")
 
         # Verify results
         assert len(result) == 1
@@ -176,7 +176,7 @@ class TestFindUsages:
         mock_jedi_script.get_references.return_value = [ref1, ref2]
 
         # Call the function
-        result = find_usages("root_dir", "TestClass")
+        result = find_usages(root="root_dir", target="TestClass")
 
         # Verify results - duplicates should be removed
         assert len(result) == 1
@@ -200,7 +200,7 @@ class TestFindUsages:
         mock_jedi_script.side_effect = Exception("Jedi error")
 
         # Call the function
-        result = find_usages("root_dir", "TestClass")
+        result = find_usages(root="root_dir", target="TestClass")
 
         # Verify empty result due to exception
         assert result == []
