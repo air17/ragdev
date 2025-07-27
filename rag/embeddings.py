@@ -241,7 +241,7 @@ class EmbeddingManager:
 
     def retrieve_vectors_for_question(
         self, question: str, top_k: int = 5
-    ) -> list[list[MilvusSearchResult]]:
+    ) -> list[MilvusSearchResult]:
         """
         Retrieve vectors from the collection that are most similar to the question.
 
@@ -259,11 +259,12 @@ class EmbeddingManager:
         self.milvus.load_collection(self.collection_name)
 
         # Perform the search
-        results = self.milvus.search(
+        results: list[list[dict]] = self.milvus.search(
             collection_name=self.collection_name,
             data=[question_embedding],
             output_fields=["filename", "start_line", "end_line"],
             limit=top_k,
         )
-
-        return results
+        if not results or not results[0]:
+            return []
+        return [*sorted(results[0], key=lambda x: x["distance"])]

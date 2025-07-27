@@ -149,4 +149,4 @@ class TestEmbeddingManager:
             output_fields=["filename", "start_line", "end_line"],
             limit=5,
         )
-        assert result == mock_search_results
+        assert result == mock_search_results[0]

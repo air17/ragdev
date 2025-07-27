@@ -82,8 +82,7 @@ def search_code(
     manager = EmbeddingManager(collection_name=collection_name)
     # The Milvus Python SDK wraps results in a nested list where index 0 is the
     # list of hits for our single query vector.  We flatten it for convenience.
-    results_nested = manager.retrieve_vectors_for_question(question, top_k=top_k)
-    return results_nested[0] if results_nested else []
+    return manager.retrieve_vectors_for_question(question, top_k=top_k)
 
 
 def search_code_with_snippets(
