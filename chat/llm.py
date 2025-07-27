@@ -4,7 +4,7 @@ from config import GEMINI_API_KEY
 from find_usages import find_usages
 from find_usages.find_block import find_definitions
 from find_usages.grep import search_codebase
-from find_usages.indexer import create_file_tree
+from find_usages.file_list import create_file_tree
 from find_usages.read_file import read_file
 from rag.embeddings import EmbeddingManager
 from rag.snippet_reader import read_snippets
@@ -34,7 +34,7 @@ class ChatAgent:
             "  • grep_search(query: str)\n"
             "  • find_definitions(symbol: str)\n"
             "  • find_usages(symbol: str)\n"
-            "  • read_file(path: str, start_line: int, end_line: int | None)\n"
+            "  • read_file(path: str, start_line: int, end_line: int)\n"
             "\nWhen you need to call a tool, respond exactly with:\n"
             'TOOL: <tool_name>("<argument without name>")\n'
             "Be careful to not add any extra text before or after the tool call.\n"
@@ -42,8 +42,9 @@ class ChatAgent:
             'TOOL: query_vector_db("UserSerializer")'
             'TOOL: read_file("./relative/path/to/file.py", 12, 93)\n'
             "The agent will run the tool, append the result, and prompt you again.\n"
-            "Be careful nwhen using read_file: as the file can be quiet big the use of end_line arg is advised\n"
+            "When using read_file: you can not read more than 100 lines at once (end_line - start_line <= 100).\n"
             "If you dont need extra context, or you have already got all the information you need, return your final answer in plain text (no TOOL: prefix)."
+            "In your final answer cite code snippets from the codebase and add links to the codebase (grep format).\n"
         )
         self.embedding_manager = EmbeddingManager()
 
@@ -108,11 +109,7 @@ class ChatAgent:
                 path, start_line, end_line = map(
                     lambda x: x.strip("'\""), args.split(", ")
                 )
-                result = read_file(
-                    path,
-                    int(start_line),
-                    int(end_line) if end_line and end_line != "None" else None,
-                )
+                result = read_file(path, int(start_line), int(end_line))
             else:
                 result = f"Error: unknown tool {tool_name}"
         except Exception as e:
