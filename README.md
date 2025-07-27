@@ -25,13 +25,7 @@ cd ragdev
 pip install -r requirements.txt
 ```
 
-3. Install additional dependencies:
-
-```bash
-pip install google-generativeai  # For Gemini API
-```
-
-4. Set up pre-commit hooks (recommended for development):
+3. Set up pre-commit hooks (recommended for development):
 
 ```bash
 pip install pre-commit
