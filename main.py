@@ -25,7 +25,7 @@ __all__ = [
 from rag.snippet_reader import read_snippets
 
 
-def index_all(directory: str | os.PathLike[str] = ".") -> None:
+def index_all(directory: str | os.PathLike[str] = ".", resume: bool = True) -> None:
     """Index *directory* with both available back-ends.
 
     This helper simply forwards to :pyfunc:`rag.code_indexer.index` to create
@@ -43,7 +43,7 @@ def index_all(directory: str | os.PathLike[str] = ".") -> None:
     directory_str = os.fspath(directory)
 
     print("\n[1/2] Building vector index (Milvus/Gemini)…")
-    _vector_index(directory_str)
+    _vector_index(directory_str, resume=resume)
 
     print("\n[2/2] Building usages index (Jedi)…")
     _usages_index(directory_str)
