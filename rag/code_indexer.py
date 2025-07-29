@@ -22,6 +22,7 @@ DEFAULT_DIR_WITHIN_PARENT_EXCLUSIONS: tuple[tuple[str, str]] = (
     ("jl_main_project", "jetlend_models"),  # Specific to this project
 )
 DEFAULT_FILE_EXTENSIONS: tuple[str, ...] = (".py",)
+DEFAULT_BATCH_SIZE: int = 100
 
 
 def process_directory(
@@ -31,7 +32,7 @@ def process_directory(
     max_lines: int = 30,
     max_func_lines: int = 50,
     resume: bool = True,
-    batch_size: int = 20,
+    batch_size: int = DEFAULT_BATCH_SIZE,
     dir_exclusions: tuple[str, ...] = DEFAULT_DIR_EXCLUSIONS,
     dir_within_parent_exclusions: tuple[
         tuple[str, str], ...
@@ -171,6 +172,7 @@ def index(
     dir_within_parent_exclusions: tuple[
         tuple[str, str]
     ] = DEFAULT_DIR_WITHIN_PARENT_EXCLUSIONS,
+    batch_size: int = DEFAULT_BATCH_SIZE,
 ) -> None:
     """
     Main function to process files and add them to the vector database.
@@ -181,6 +183,7 @@ def index(
         resume (bool): Whether to resume from previous indexing state, defaults to True.
         dir_exclusions (tuple[str]): List of directory names to exclude.
         dir_within_parent_exclusions (tuple[tuple[str, str]]): List of parent-child directory name pairs to exclude.
+        batch_size (int): Number of files to process in a single batch, defaults to 100.
     """
     manager: EmbeddingManager = EmbeddingManager(collection_name=collection_name)
 
@@ -202,4 +205,5 @@ def index(
         resume=resume,
         dir_exclusions=dir_exclusions,
         dir_within_parent_exclusions=dir_within_parent_exclusions,
+        batch_size=batch_size,
     )

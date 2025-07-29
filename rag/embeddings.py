@@ -318,6 +318,12 @@ class EmbeddingManager:
             data=insert_data,
         )
 
+    def delete_embeddings(self, filename: str):
+        self.milvus.delete(
+            collection_name=self.collection_name,
+            filter=f"filename = '{filename}'",
+        )
+
     def retrieve_vectors_for_question(
         self, question: str, top_k: int = 5
     ) -> list[MilvusSearchResult]:
