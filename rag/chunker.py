@@ -83,7 +83,7 @@ def chunk_file(
     Parse a Python file and split it into chunks.
 
     - Top-level FunctionDef becomes its own chunk.
-    - ClassDef is split: class definition becomes one chunk, each method becomes a separate chunk.
+    - ClassDef is split: if the class is larger than max_func_lines, the class definition becomes one chunk and each method becomes a separate chunk. Otherwise, the whole class is added as a single chunk.
     - Any FunctionDef or method longer than `max_func_lines` is split by its body into sub-chunks of at most `max_func_lines` lines.
     - Other top-level statements are grouped into `Block` chunks of at most `max_lines` lines.
     - Import statements are excluded from chunks.
@@ -122,6 +122,20 @@ def chunk_file(
 
             # Handle classes
             if isinstance(node, ast.ClassDef):
+                class_length = node.end_lineno - node.lineno + 1
+
+                # If class is small enough, add it as a single chunk
+                if class_length <= max_func_lines:
+                    chunks.append(
+                        ChunkDict(
+                            start=node.lineno,
+                            end=node.end_lineno,
+                            type="ClassDef",
+                        )
+                    )
+                    continue
+
+                # Class is too large, split it: class definition + separate methods
                 # Add the class definition itself as a chunk (excluding methods)
                 class_start = node.lineno
                 class_end = node.end_lineno

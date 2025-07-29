@@ -47,25 +47,19 @@ class TestChunker:
         result = chunk_file("test.py")
 
         # Verify result
-        assert len(result) == 3  # Class definition + 2 methods
+        assert len(result) == 1  # Just a class definition
 
         # Find the class definition chunk
         class_chunks = [chunk for chunk in result if chunk["type"] == "ClassDef"]
         assert len(class_chunks) == 1
         assert class_chunks[0]["start"] == 1
-        assert class_chunks[0]["end"] == 1  # Only includes class declaration line
+        assert class_chunks[0]["end"] == 6  # Includes the whole class
 
         # Find method chunks
         method_chunks = [chunk for chunk in result if chunk["type"] == "Method"]
-        assert len(method_chunks) == 2
-
-        # __init__ method
-        init_method = next(c for c in method_chunks if c["start"] == 2)
-        assert init_method["end"] == 3
-
-        # get_value method
-        get_value_method = next(c for c in method_chunks if c["start"] == 5)
-        assert get_value_method["end"] == 6
+        assert (
+            len(method_chunks) == 0
+        )  # No method chunks as they all are in the class chunk
 
     @patch("builtins.open")
     def test_chunk_file_large_function(self, mock_file):
@@ -144,19 +138,19 @@ class TestChunker:
         result = chunk_file("test.py")
 
         # Verify result
-        assert len(result) == 2  # Class definition (with attributes) + 1 method
+        assert len(result) == 1  # Class definition (with attributes) and method
 
         # Find the class definition chunk
         class_chunks = [chunk for chunk in result if chunk["type"] == "ClassDef"]
         assert len(class_chunks) == 1
         assert class_chunks[0]["start"] == 1
-        assert class_chunks[0]["end"] == 4  # Includes attributes
+        assert class_chunks[0]["end"] == 10  # Includes attributes and method
 
         # Find method chunks
         method_chunks = [chunk for chunk in result if chunk["type"] == "Method"]
-        assert len(method_chunks) == 1
-        assert method_chunks[0]["start"] == 6  # Method starts at line 6
-        assert method_chunks[0]["end"] == 10  # Method ends at line 10
+        assert (
+            len(method_chunks) == 0
+        )  # No method chunks as the method is inside the class
 
     @patch("builtins.open")
     def test_chunk_file_class_no_methods(self, mock_file):
