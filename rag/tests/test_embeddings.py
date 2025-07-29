@@ -2,7 +2,12 @@ import pytest
 from unittest.mock import patch, MagicMock
 import numpy as np
 
-from rag.embeddings import EmbeddingManager, MilvusInsertData
+from rag.embeddings import (
+    EmbeddingManager,
+    MilvusInsertData,
+    CODE_RETRIEVAL_QUERY_TASK_TYPE,
+    RETRIEVAL_DOCUMENT_TASK_TYPE,
+)
 
 
 @pytest.fixture
@@ -122,7 +127,9 @@ class TestEmbeddingManager:
         embedding_manager.add_to_vector("test content", "test.py", 10, 20)
 
         # Verify methods were called correctly
-        embedding_manager.get_embedding.assert_called_once_with("test content")
+        embedding_manager.get_embedding.assert_called_once_with(
+            "test content", RETRIEVAL_DOCUMENT_TASK_TYPE
+        )
         embedding_manager.insert_embedding.assert_called_once_with(
             vector=[0.1, 0.2, 0.3], filename="test.py", start_line=10, end_line=20
         )
@@ -141,7 +148,9 @@ class TestEmbeddingManager:
         )
 
         # Verify methods were called correctly
-        embedding_manager.get_embedding.assert_called_once_with("test question")
+        embedding_manager.get_embedding.assert_called_once_with(
+            "test question", CODE_RETRIEVAL_QUERY_TASK_TYPE
+        )
         mock_milvus_client.load_collection.assert_called_once_with("test_collection")
         mock_milvus_client.search.assert_called_once_with(
             collection_name="test_collection",

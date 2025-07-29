@@ -11,6 +11,7 @@ def test_process_directory_exists():
 
     # Create a mock manager
     mock_manager = MagicMock(spec=EmbeddingManager)
+    mock_manager.collection_name = "test_collection"
 
     # Patch necessary dependencies to prevent actual file system access
     with (

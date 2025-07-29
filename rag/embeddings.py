@@ -12,6 +12,11 @@ from config import (
     DEFAULT_COLLECTION_NAME,
 )
 
+RETRIEVAL_DOCUMENT_TASK_TYPE = "RETRIEVAL_DOCUMENT"
+CODE_RETRIEVAL_QUERY_TASK_TYPE = "CODE_RETRIEVAL_QUERY"
+
+DEFAULT_VECTOR_DIMENSION = 768
+
 
 class MilvusInsertData(TypedDict):
     """Data structure for inserting into Milvus."""
@@ -60,6 +65,7 @@ class EmbeddingManager:
         milvus_token: str = MILVUS_TOKEN,
         gemini_api_key: str = GEMINI_API_KEY,
         collection_name: str = DEFAULT_COLLECTION_NAME,
+        vector_dimension: int = DEFAULT_VECTOR_DIMENSION,
     ):
         """
         Initialize the EmbeddingManager with Milvus and Gemini clients.
@@ -74,6 +80,7 @@ class EmbeddingManager:
         )
         self.gemini: GenAIClient = GenAIClient(api_key=gemini_api_key)
         self.collection_name: str = collection_name
+        self.vector_dimension: int = vector_dimension
 
     def drop_collection(self):
         """
@@ -87,16 +94,12 @@ class EmbeddingManager:
         """
         self.milvus.drop_collection(collection_name=self.collection_name)
 
-    def create_collection_if_not_exists(self, vector_dim: int = 768) -> bool:
+    def create_collection_if_not_exists(self) -> bool:
         """
         Create a Milvus collection if it doesn't already exist.
 
-        Args:
-            collection_name (str): Name of the collection to create.
-            vector_dim (int): Dimension of the embedding vectors.
-
         Returns:
-            bool: True if collection was created, False if it already existed.
+            bool: True if a collection was created, False if it already existed.
         """
         # Check if collection exists
         collections = self.milvus.list_collections()
@@ -118,7 +121,7 @@ class EmbeddingManager:
                     name="vector",
                     description="Embedding vector",
                     dtype=DataType.FLOAT_VECTOR,
-                    dim=vector_dim,
+                    dim=self.vector_dimension,
                 ),
                 FieldSchema(
                     name="filename",
@@ -163,7 +166,7 @@ class EmbeddingManager:
         return True
 
     def get_embedding(
-        self, text: str, task_type: str = "RETRIEVAL_DOCUMENT"
+        self, text: str, task_type: str = RETRIEVAL_DOCUMENT_TASK_TYPE
     ) -> list[float]:
         """
         Generate a normalized embedding vector for the given text using the GenAI client.
@@ -179,7 +182,7 @@ class EmbeddingManager:
             model="gemini-embedding-001",
             contents=text,
             config=types.EmbedContentConfig(
-                output_dimensionality=768,
+                output_dimensionality=self.vector_dimension,
                 task_type=task_type,
             ),
         )
@@ -190,6 +193,37 @@ class EmbeddingManager:
         ).tolist()
 
         return normed_embedding
+
+    def get_embeddings_in_batch(
+        self, texts: list[str], task_type: str = RETRIEVAL_DOCUMENT_TASK_TYPE
+    ) -> list[list[float]]:
+        """
+        Generate normalized embedding vectors for a batch of texts using the GenAI client.
+
+        Args:
+            texts (list[str]): A list of input texts to embed.
+            task_type (str): The type of task for which the embeddings are generated. Default is "RETRIEVAL_DOCUMENT".
+
+        Returns:
+            list[list[float]]: A list of normalized embedding vectors.
+        """
+        result: types.EmbedContentResponse = self.gemini.models.embed_content(
+            model="gemini-embedding-001",
+            contents=texts,
+            config=types.EmbedContentConfig(
+                output_dimensionality=self.vector_dimension,
+                task_type=task_type,
+            ),
+        )
+        embeddings: list[list[float]] = []
+        for embedding_obj in result.embeddings:
+            embedding_values_np: np.array = np.array(embedding_obj.values)
+            normed_embedding: list[float] = (
+                embedding_values_np / np.linalg.norm(embedding_values_np)
+            ).tolist()
+            embeddings.append(normed_embedding)
+
+        return embeddings
 
     def insert_embedding(
         self, vector: list[float], filename: str, start_line: int, end_line: int
@@ -230,13 +264,58 @@ class EmbeddingManager:
             start_line (int): Starting line number of the chunk.
             end_line (int): Ending line number of the chunk.
         """
-        embedding_vectors: list[float] = self.get_embedding(content)
+        embedding_vectors: list[float] = self.get_embedding(
+            content, RETRIEVAL_DOCUMENT_TASK_TYPE
+        )
 
         self.insert_embedding(
             vector=embedding_vectors,
             filename=filename,
             start_line=start_line,
             end_line=end_line,
+        )
+
+    def add_to_vector_in_batch(
+        self, batch_data: list[tuple[str, str, int, int]]
+    ) -> MilvusResponse | None:
+        """
+        Add multiple content items to the vector database in a single batch operation.
+        Generates embeddings for all content items asynchronously.
+
+        Args:
+            batch_data (list[tuple[str, str, int, int]]): List of tuples containing:
+                - content (str): The text content to be embedded
+                - filename (str): The source filename
+                - start_line (int): Starting line number of the chunk
+                - end_line (int): Ending line number of the chunk
+
+        """
+        if not batch_data:
+            return
+
+        # Run the async function and get the embeddings
+        embedding_vectors = self.get_embeddings_in_batch(
+            [content for content, _, _, _ in batch_data],
+            RETRIEVAL_DOCUMENT_TASK_TYPE,
+        )
+
+        # Prepare insert data with the generated embeddings
+        insert_data = [
+            MilvusInsertData(
+                vector=embedding_vector,
+                filename=filename,
+                start_line=start_line,
+                end_line=end_line,
+            )
+            for embedding_vector, (_, filename, start_line, end_line) in zip(
+                embedding_vectors, batch_data
+            )
+        ]
+
+        # Perform batch insert
+        return self.milvus.insert(
+            collection_name=self.collection_name,
+            data=insert_data,
         )
 
     def retrieve_vectors_for_question(
@@ -254,7 +333,9 @@ class EmbeddingManager:
             The outer list represents different queries, while the inner list contains the search results for each query.
         """
         # Generate embedding for the question
-        question_embedding = self.get_embedding(question)
+        question_embedding = self.get_embedding(
+            question, CODE_RETRIEVAL_QUERY_TASK_TYPE
+        )
 
         self.milvus.load_collection(self.collection_name)
 

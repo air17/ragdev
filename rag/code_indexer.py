@@ -37,7 +37,7 @@ def process_directory(
     state_file_path = Path(
         f"./.indexer_state_{directory_hash}_{manager.collection_name}.json"
     )
-    indexed_files = set()
+    indexed_files: set[str] = set()
 
     # Load previously indexed files if resuming
     if resume and state_file_path.exists():
@@ -49,14 +49,15 @@ def process_directory(
                     f"Resuming indexing: {len(indexed_files)} files already processed"
                 )
         except Exception as e:
-            print(f"Error loading indexer state: {str(e)}")
-            indexed_files = set()
+            print(f"Error loading indexer state: {str(e)}. Starting from scratch.")
 
     try:
         for root, dirs, files in os.walk(abs_directory):
             # In-place pruning of directories so os.walk() never descends into them
             dirs[:] = [
-                d for d in dirs if not (d.startswith("test") or d.startswith("."))
+                d
+                for d in dirs
+                if not (d.startswith("test") or d.startswith(".") or d == "migrations")
             ]
             for filename in files:
                 file_path = os.path.join(root, filename)
@@ -82,6 +83,10 @@ def process_directory(
                     # Generate chunks for the file
                     chunks = chunk_file(file_path, max_lines, max_func_lines)
 
+                    # Prepare batch processing variables
+                    batch_size = 10
+                    batch_chunks: list[tuple[str, str, int, int]] = []
+
                     # Process each chunk
                     for chunk in chunks:
                         start_line = chunk.get("start")
@@ -89,13 +94,27 @@ def process_directory(
 
                         chunk_content: str = read_file(file_path, start_line, end_line)
 
-                        # Add chunk to vector database
                         print(
-                            f"Adding chunk {start_line}-{end_line} ({chunk.get('type')}) to vector DB"
+                            f"Preparing chunk {start_line}-{end_line} ({chunk.get('type')}) for vector DB"
                         )
-                        manager.add_to_vector(
-                            chunk_content, rel_path, start_line, end_line
+                        batch_chunks.append(
+                            (chunk_content, rel_path, start_line, end_line)
                         )
+
+                        # Add batch to vector database when batch size is reached
+                        if len(batch_chunks) >= batch_size:
+                            print(
+                                f"Adding batch of {len(batch_chunks)} chunks to vector DB"
+                            )
+                            manager.add_to_vector_in_batch(batch_chunks)
+                            batch_chunks = []
+
+                    # Add any remaining chunks in the last batch
+                    if batch_chunks:
+                        print(
+                            f"Adding final batch of {len(batch_chunks)} chunks to vector DB"
+                        )
+                        manager.add_to_vector_in_batch(batch_chunks)
 
                     # Mark file as indexed
                     indexed_files.add(rel_path)
