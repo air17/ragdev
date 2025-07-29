@@ -7,18 +7,39 @@ from find_usages.read_file import read_file
 from .chunker import chunk_file
 from .embeddings import EmbeddingManager
 
+# Default list of directories to exclude from indexing
+DEFAULT_DIR_EXCLUSIONS: tuple[str, ...] = (
+    "test",  # Test directories
+    ".",  # Hidden directories
+    "migrations",  # Database migrations
+    "__pycache__",  # Python bytecode
+    "venv",  # Virtual environments
+    "env",  # Virtual environments
+    "node_modules",  # Node.js dependencies
+)
+# Special case exclusions (directory name and parent directory name pairs)
+DEFAULT_DIR_WITHIN_PARENT_EXCLUSIONS: tuple[tuple[str, str]] = (
+    ("jl_main_project", "jetlend_models"),  # Specific to this project
+)
+DEFAULT_FILE_EXTENSIONS: tuple[str, ...] = (".py",)
+
 
 def process_directory(
     manager: EmbeddingManager,
     directory: str = ".",
-    file_extensions: tuple[str] = (".py",),
+    file_extensions: tuple[str] = DEFAULT_FILE_EXTENSIONS,
     max_lines: int = 30,
     max_func_lines: int = 50,
     resume: bool = True,
+    batch_size: int = 20,
+    dir_exclusions: tuple[str, ...] = DEFAULT_DIR_EXCLUSIONS,
+    dir_within_parent_exclusions: tuple[
+        tuple[str, str], ...
+    ] = DEFAULT_DIR_WITHIN_PARENT_EXCLUSIONS,
 ) -> None:
     """
     Process all files in a directory and its subdirectories, chunk them, and add them to the vector database.
-    Skips test folders and files starting with 'test'. Tracks already processed files to support resuming.
+    Skips directories in the exclusion lists and files starting with 'test'. Tracks already processed files to support resuming.
 
     Args:
         manager (EmbeddingManager): Instance of the embedding manager to handle vector DB operations.
@@ -27,6 +48,9 @@ def process_directory(
         max_lines (int): Maximum number of lines for a regular chunk.
         max_func_lines (int): Maximum number of lines for a function chunk.
         resume (bool): Whether to resume from previous indexing state, defaults to True.
+        batch_size (int): Number of chunks to process in each batch, defaults to 20.
+        dir_exclusions (list[str]): List of directory names to exclude, defaults to DEFAULT_DIR_EXCLUSIONS.
+        dir_within_parent_exclusions (list[tuple[str, str]]): List of (parent_dir, dir) pairs for special exclusions.
     """
     # Get an absolute path if a relative path is provided
     abs_directory = os.path.abspath(directory)
@@ -57,7 +81,16 @@ def process_directory(
             dirs[:] = [
                 d
                 for d in dirs
-                if not (d.startswith("test") or d.startswith(".") or d == "migrations")
+                if not (
+                    # Check against regular exclusions (startswith or exact match)
+                    any(d.startswith(exclude) for exclude in dir_exclusions)
+                    or
+                    # Check against special case exclusions (parent_dir, dir pairs)
+                    any(
+                        os.path.basename(root) == parent and d == child
+                        for parent, child in dir_within_parent_exclusions
+                    )
+                )
             ]
             for filename in files:
                 file_path = os.path.join(root, filename)
@@ -84,19 +117,13 @@ def process_directory(
                     chunks = chunk_file(file_path, max_lines, max_func_lines)
 
                     # Prepare batch processing variables
-                    batch_size = 10
                     batch_chunks: list[tuple[str, str, int, int]] = []
 
                     # Process each chunk
                     for chunk in chunks:
                         start_line = chunk.get("start")
                         end_line = chunk.get("end")
-
                         chunk_content: str = read_file(file_path, start_line, end_line)
-
-                        print(
-                            f"Preparing chunk {start_line}-{end_line} ({chunk.get('type')}) for vector DB"
-                        )
                         batch_chunks.append(
                             (chunk_content, rel_path, start_line, end_line)
                         )
@@ -140,6 +167,10 @@ def index(
     directory: str = ".",
     collection_name: str = DEFAULT_COLLECTION_NAME,
     resume: bool = True,
+    dir_exclusions: tuple[str, ...] = DEFAULT_DIR_EXCLUSIONS,
+    dir_within_parent_exclusions: tuple[
+        tuple[str, str]
+    ] = DEFAULT_DIR_WITHIN_PARENT_EXCLUSIONS,
 ) -> None:
     """
     Main function to process files and add them to the vector database.
@@ -148,6 +179,8 @@ def index(
         directory (str): Directory path to process, defaults to the current directory.
         collection_name (str): Name of the collection to use in the vector database.
         resume (bool): Whether to resume from previous indexing state, defaults to True.
+        dir_exclusions (tuple[str]): List of directory names to exclude.
+        dir_within_parent_exclusions (tuple[tuple[str, str]]): List of parent-child directory name pairs to exclude.
     """
     manager: EmbeddingManager = EmbeddingManager(collection_name=collection_name)
 
@@ -163,4 +196,10 @@ def index(
             manager.create_collection_if_not_exists()
 
     # Process files
-    process_directory(manager, directory=directory, resume=resume)
+    process_directory(
+        manager,
+        directory=directory,
+        resume=resume,
+        dir_exclusions=dir_exclusions,
+        dir_within_parent_exclusions=dir_within_parent_exclusions,
+    )
