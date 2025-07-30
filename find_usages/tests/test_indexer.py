@@ -229,3 +229,40 @@ class TestCreateFileTree:
 
         # Verify hidden and test directories were skipped
         assert ".git" not in result
+
+    def test_create_file_tree_with_depth(self, mock_walk):
+        # Setup mock directory structure with multiple depth levels
+        mock_walk.return_value = [
+            (".", ["level1"], ["root.py"]),
+            ("./level1", ["level2"], ["level1.py"]),
+            ("./level1/level2", ["level3"], ["level2.py"]),
+            ("./level1/level2/level3", ["level4"], ["level3.py"]),
+            ("./level1/level2/level3/level4", [], ["level4.py"]),
+        ]
+
+        # Test with depth=1 (only root and level1)
+        result_depth1 = create_file_tree(depth=1)
+
+        # Verify level1 is included but level2 is not
+        assert "level1" in result_depth1
+        assert "level1.py" in result_depth1
+        assert "level2" not in result_depth1
+        assert "level2.py" not in result_depth1
+
+        # Test with depth=2 (root, level1, and level2)
+        result_depth2 = create_file_tree(depth=2)
+
+        # Verify level2 is included but level3 is not
+        assert "level1" in result_depth2
+        assert "level2" in result_depth2
+        assert "level2.py" in result_depth2
+        assert "level3" not in result_depth2
+        assert "level3.py" not in result_depth2
+
+        # Test with depth=0 (only root)
+        result_depth0 = create_file_tree(depth=0)
+
+        # Verify only root level is included
+        assert "root.py" in result_depth0
+        assert "level1" not in result_depth0
+        assert "level1.py" not in result_depth0
