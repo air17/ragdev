@@ -49,7 +49,7 @@ class ChatAgent:
         self.system_prompt = (
             "You are an expert developer for answering questions using a Python codebase as a context.\n"
             f"{tree_prompt}\n\n"
-            "You have these tools available:\n"
+            "You have these tools available, you can call them as many times as you need:\n"
             "  • query_vector_db(question: str)\n"
             "  • grep_search(query: str)\n"
             "  • find_definitions(symbol: str)\n"
@@ -65,7 +65,7 @@ class ChatAgent:
             "When using read_file: you can not read more than 100 lines at once (end_line - start_line <= 100).\n"
             "When using query_vector_db it returns code chunks but they may be not full (half of class or function) so you may need to read the next lines with other tools.\n"
             "If you dont need extra context, or you have already got all the information you need, return your final answer in plain text (no TOOL: prefix)."
-            "In your final answer cite code snippets from the codebase and add links to the codebase (grep format).\n"
+            "In your final answer cite code snippets from the codebase and add links to the codebase (grep format). Never ever make up code snippets.\n"
         )
         self.embedding_manager = EmbeddingManager(collection_name=collection_name)
 
@@ -84,7 +84,7 @@ class ChatAgent:
                 )
             )
             response_text: str = response.text
-            print(f"log: {response_text}")
+            print(f"ASSISTANT_OUTPUT: {response_text}")
             self.messages.append(f"Assistant input: {response_text}")
 
             # Check for tool invocation
@@ -111,18 +111,20 @@ class ChatAgent:
         tool_call = call_text.strip().splitlines()[-1].strip()[5:].strip()
         tool_name, args_str = tool_call.split("(", 1)
         args = args_str.rstrip(")").strip().strip("'\"")
+        print(f"TOOL_CALL: {tool_name}({args})")
         # Dispatch
         try:
             if tool_name == "query_vector_db":
                 result = read_snippets(
-                    self.embedding_manager.retrieve_vectors_for_question(args)
+                    self.embedding_manager.retrieve_vectors_for_question(args),
+                    base_dir=self.project_dir,
                 )
                 for record in result:
                     record.pop("id", None)
                     record.pop("distance", None)
             elif tool_name == "grep_search":
                 result = search_codebase(args, self.project_dir)
-            elif tool_name == "find_definition":
+            elif tool_name == "find_definitions":
                 result = find_definitions(args)
             elif tool_name == "find_usages":
                 result = find_usages(args)
@@ -139,6 +141,6 @@ class ChatAgent:
             result = f"Tool call failed with exception: {e}"
 
         self.messages.append(
-            f"Tool call: tool name:{tool_name}({args}) result: {result}"
+            f"Tool call: tool name:{tool_name}({args}) result:\n{result}"
         )
-        print("log tool call:", self.messages[-1])
+        print("TOOL_RESULT:", str(result)[:100] + "...")
