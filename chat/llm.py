@@ -109,7 +109,10 @@ class ChatAgent:
                     lambda x: x.strip("'\""), args.split(", ")
                 )
                 result = read_file(
-                    self.project_dir + "/" + path, int(start_line), int(end_line)
+                    self.project_dir + "/" + path,
+                    int(start_line),
+                    int(end_line),
+                    add_line_numbers=True,
                 )
             elif tool_name == "ls":
                 ls(args)
