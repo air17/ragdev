@@ -1,6 +1,7 @@
 from pathlib import Path
 from typing import Iterable, Union
 
+from agent_tools.read_file import read_file
 from rag.embeddings import MilvusSearchResult as SearchResult
 
 
@@ -11,29 +12,6 @@ class EnrichedSearchResult(SearchResult, total=False):
 
 
 __all__ = ["read_snippets"]
-
-
-def _read_single_snippet(file_path: Path, start: int, end: int) -> str:
-    """Return text contained in *file_path* between *start* and *end* lines.
-
-    Lines are **1-indexed**; *end* is inclusive.
-    If the file cannot be opened or the range is invalid, an empty string
-    is returned.
-    """
-    try:
-        with file_path.open("r", encoding="utf-8", errors="replace") as fh:
-            lines = fh.readlines()
-    except FileNotFoundError:
-        return ""
-
-    # Clamp range to file length and valid values
-    start = max(1, start)
-    end = min(len(lines), end)
-    if start > end:
-        return ""
-
-    # Convert to 0-indexed slice; *end* is inclusive so use end
-    return "".join(lines[start - 1 : end])
 
 
 def read_snippets(
@@ -72,11 +50,15 @@ def read_snippets(
         if root is not None and not path.is_absolute():
             path = root / path
 
-        snippet = _read_single_snippet(
-            path,
-            int(entity.get("start_line", 1)),
-            int(entity.get("end_line", 0)),
-        )
+        try:
+            snippet: str = read_file(
+                str(path),
+                int(entity.get("start_line", 1)),
+                int(entity.get("end_line")),
+                add_line_numbers=True,
+            )
+        except FileNotFoundError:
+            snippet = ""
         if snippet:
             # Create a copy of the original item as a dict
             new_item_dict = EnrichedSearchResult(item)

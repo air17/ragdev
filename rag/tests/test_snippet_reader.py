@@ -1,46 +1,9 @@
 from unittest.mock import patch
-from pathlib import Path
 
-from rag.snippet_reader import read_snippets, _read_single_snippet, SearchResult
+from rag.snippet_reader import read_snippets, SearchResult
 
 
 class TestSnippetReader:
-    @patch("pathlib.Path.open")
-    def test_read_single_snippet(self, mock_file):
-        # Setup mock file with lines
-        file_content = "line1\nline2\nline3\nline4\nline5\n"
-        mock_file.return_value.__enter__.return_value.readlines.return_value = (
-            file_content.split("\n")
-        )
-
-        # Call the function for lines 2-4
-        result = _read_single_snippet(Path("test.py"), 2, 4)
-
-        # Verify result
-        assert result == "line2line3line4"
-
-    @patch("pathlib.Path.open")
-    def test_read_single_snippet_invalid_range(self, mock_file):
-        # Setup mock file
-        file_content = "line1\nline2\nline3\n"
-        mock_file.return_value.__enter__.return_value.readlines.return_value = (
-            file_content.split("\n")
-        )
-
-        # Test invalid range (start > end)
-        result = _read_single_snippet(Path("test.py"), 5, 3)
-        assert result == ""
-
-        # Test out of bounds range
-        result = _read_single_snippet(Path("test.py"), 4, 10)
-        assert result == ""
-
-    @patch("pathlib.Path.open", side_effect=FileNotFoundError)
-    def test_read_single_snippet_file_not_found(self, mock_file):
-        # Test with non-existent file
-        result = _read_single_snippet(Path("nonexistent.py"), 1, 5)
-        assert result == ""
-
     def test_read_snippets(self):
         # Create test search results
         search_results = [
@@ -61,12 +24,12 @@ class TestSnippetReader:
         ]
 
         # Mock _read_single_snippet
-        with patch("rag.snippet_reader._read_single_snippet") as mock_read:
+        with patch("rag.snippet_reader.read_file") as mock_read:
             # Configure mock to return different snippets based on input
-            def side_effect(path, start, end):
-                if path.name == "test1.py":
+            def side_effect(path, start, end, add_line_numbers):
+                if path == "test1.py":
                     return "snippet1"
-                elif path.name == "test2.py":
+                elif path == "test2.py":
                     return "snippet2"
                 return ""
 
@@ -93,15 +56,17 @@ class TestSnippetReader:
         ]
 
         # Mock _read_single_snippet
-        with patch("rag.snippet_reader._read_single_snippet") as mock_read:
+        with patch("rag.snippet_reader.read_file") as mock_read:
             mock_read.return_value = "code snippet"
 
             # Call the function with base_dir
             results = read_snippets(search_results, base_dir="/base/dir")
 
             # Verify mock was called with correct combined path
-            expected_path = Path("/base/dir/relative/path.py")
-            mock_read.assert_called_once_with(expected_path, 1, 5)
+            expected_path = "/base/dir/relative/path.py"
+            mock_read.assert_called_once_with(
+                expected_path, 1, 5, add_line_numbers=True
+            )
 
             # Verify result
             assert len(results) == 1
@@ -118,7 +83,7 @@ class TestSnippetReader:
         ]
 
         # Mock _read_single_snippet to return empty string
-        with patch("rag.snippet_reader._read_single_snippet", return_value=""):
+        with patch("rag.snippet_reader.read_file", return_value=""):
             # Call the function
             results = read_snippets(search_results)
 
