@@ -4,7 +4,7 @@ from config import GEMINI_API_KEY, DEFAULT_COLLECTION_NAME
 from find_usages import find_usages
 from find_usages.find_block import find_definitions
 from find_usages.grep import search_codebase
-from find_usages.file_list import create_file_tree
+from find_usages.file_list import ls
 from find_usages.read_file import read_file
 from rag.embeddings import EmbeddingManager
 from rag.snippet_reader import read_snippets
@@ -28,33 +28,17 @@ class ChatAgent:
         self.model: str = model
         self.project_dir = project_dir
 
-        # Prepare a system message with the project tree and clear invoke conventions
-        tree_depth: int = DEFAULT_TREE_DEPTH
-        tree: str = create_file_tree(project_dir, tree_depth)
-        tree_truncated: bool = False
-        while len(tree) > MAX_TREE_LENGTH:
-            tree_truncated = True
-            tree_depth -= 1
-            tree = create_file_tree(project_dir, tree_depth)
-        tree_prompt: str = (
-            "Here is the project tree"
-            + (
-                f" truncated at {tree_depth} levels with some dirs omitted:\n"
-                if tree_truncated
-                else ":\n"
-            )
-            + tree
-        )
-
         self.system_prompt = (
             "You are an expert developer for answering questions using a Python codebase as a context.\n"
-            f"{tree_prompt}\n\n"
+            "Here is the root folder list of files and directories:\n"
+            f"{ls()}\n\n"
             "You have these tools available, you can call them as many times as you need:\n"
             "  • query_vector_db(question: str)\n"
             "  • grep_search(query: str)\n"
             "  • find_definitions(symbol: str)\n"
             "  • find_usages(symbol: str)\n"
             "  • read_file(path: str, start_line: int, end_line: int)\n"
+            "  • ls(path: str)\n"
             "\nWhen you need to call a tool, respond exactly with:\n"
             'TOOL: <tool_name>("<argument without name>")\n'
             "Be careful to not add any extra text before or after the tool call.\n"
@@ -135,6 +119,8 @@ class ChatAgent:
                 result = read_file(
                     self.project_dir + "/" + path, int(start_line), int(end_line)
                 )
+            elif tool_name == "ls":
+                ls(args)
             else:
                 result = f"Error: unknown tool {tool_name}"
         except Exception as e:

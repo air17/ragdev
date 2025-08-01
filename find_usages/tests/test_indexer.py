@@ -1,6 +1,7 @@
 import pytest
 from unittest.mock import patch, MagicMock, mock_open
 
+from find_usages.file_list import ls
 from find_usages.indexer import (
     index_project,
     is_test_directory,
@@ -11,7 +12,6 @@ from find_usages.indexer import (
     create_index_entry,
     write_index_to_file,
 )
-from find_usages.file_list import create_file_tree
 
 
 @pytest.fixture
@@ -203,66 +203,17 @@ class TestIndexProject:
         assert args[0] == [entry1, entry2]
 
 
-@patch("os.walk")
-class TestCreateFileTree:
-    def test_create_file_tree(self, mock_walk):
-        # Setup mock directory structure
-        mock_walk.return_value = [
-            (".", [".git", "src", "tests", "docs"], ["README.md", "setup.py"]),
-            ("./src", ["utils"], ["main.py", "helper.py"]),
-            (
-                "./src/utils",
-                [],
-                ["common.py", "data.bin"],
-            ),  # data.bin should be ignored
-            ("./docs", [], ["index.html", "test_main.txt"]),
-        ]
+@patch("os.listdir")
+class TestListFiles:
+    def test_ls(self, mock_listdir):
+        # Setup mock for os.listdir
+        mock_listdir.return_value = ["file3.py", "file1.py", "file2.py"]
 
         # Call the function
-        result = create_file_tree()
+        result = ls()
 
         # Verify result
-        assert "README.md" in result
-        assert "utils" in result
-        assert "data.bin" not in result
-        assert "test_main.txt" in result
+        assert result == "file1.py\nfile2.py\nfile3.py"
 
-        # Verify hidden and test directories were skipped
-        assert ".git" not in result
-
-    def test_create_file_tree_with_depth(self, mock_walk):
-        # Setup mock directory structure with multiple depth levels
-        mock_walk.return_value = [
-            (".", ["level1"], ["root.py"]),
-            ("./level1", ["level2"], ["level1.py"]),
-            ("./level1/level2", ["level3"], ["level2.py"]),
-            ("./level1/level2/level3", ["level4"], ["level3.py"]),
-            ("./level1/level2/level3/level4", [], ["level4.py"]),
-        ]
-
-        # Test with depth=1 (only root and level1)
-        result_depth1 = create_file_tree(depth=1)
-
-        # Verify level1 is included but level2 is not
-        assert "level1" in result_depth1
-        assert "level1.py" in result_depth1
-        assert "level2" not in result_depth1
-        assert "level2.py" not in result_depth1
-
-        # Test with depth=2 (root, level1, and level2)
-        result_depth2 = create_file_tree(depth=2)
-
-        # Verify level2 is included but level3 is not
-        assert "level1" in result_depth2
-        assert "level2" in result_depth2
-        assert "level2.py" in result_depth2
-        assert "level3" not in result_depth2
-        assert "level3.py" not in result_depth2
-
-        # Test with depth=0 (only root)
-        result_depth0 = create_file_tree(depth=0)
-
-        # Verify only root level is included
-        assert "root.py" in result_depth0
-        assert "level1" not in result_depth0
-        assert "level1.py" not in result_depth0
+        # Verify os.listdir was called with the correct path
+        mock_listdir.assert_called_once_with(".")
