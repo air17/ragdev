@@ -1,5 +1,4 @@
 google-genai
-jedi
 numpy
 pymilvus
 pytest

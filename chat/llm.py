@@ -1,11 +1,9 @@
 from google.genai import types, Client
 
 from config import GEMINI_API_KEY, DEFAULT_COLLECTION_NAME
-from find_usages import find_usages
-from find_usages.find_block import find_definitions
-from find_usages.grep import search_codebase
-from find_usages.file_list import ls
-from find_usages.read_file import read_file
+from agent_tools.grep import search_codebase
+from agent_tools.file_list import ls
+from agent_tools.read_file import read_file
 from rag.embeddings import EmbeddingManager
 from rag.snippet_reader import read_snippets
 
@@ -35,8 +33,6 @@ class ChatAgent:
             "You have these tools available, you can call them as many times as you need:\n"
             "  • query_vector_db(question: str)\n"
             "  • grep_search(query: str)\n"
-            "  • find_definitions(symbol: str)\n"
-            "  • find_usages(symbol: str)\n"
             "  • read_file(path: str, start_line: int, end_line: int)\n"
             "  • ls(path: str)\n"
             "\nWhen you need to call a tool, respond exactly with:\n"
@@ -108,10 +104,6 @@ class ChatAgent:
                     record.pop("distance", None)
             elif tool_name == "grep_search":
                 result = search_codebase(args, self.project_dir)
-            elif tool_name == "find_definitions":
-                result = find_definitions(args)
-            elif tool_name == "find_usages":
-                result = find_usages(args)
             elif tool_name == "read_file":
                 path, start_line, end_line = map(
                     lambda x: x.strip("'\""), args.split(", ")

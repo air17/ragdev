@@ -3,7 +3,7 @@ import json
 from pathlib import Path
 
 from config import DEFAULT_COLLECTION_NAME
-from find_usages.read_file import read_file
+from agent_tools.read_file import read_file
 from .chunker import chunk_file
 from .embeddings import EmbeddingManager
 

@@ -1,25 +1,20 @@
 """Main convenience module.
 
-Provides high-level wrappers for both the vector-based RAG index (Milvus/Gemini)
-from ``rag.code_indexer`` and the static symbol usage index from
-``find_usages``.  This makes it easy to build the two indices in one step and
-query either of them without having to remember the lower-level API surface.
+Provides high-level wrappers for the vector-based RAG index (Milvus/Gemini)
+from ``rag.code_indexer``.
 """
 
 import os
 
-from config import DEFAULT_COLLECTION_NAME, USAGES_INDEX_FILE
+from config import DEFAULT_COLLECTION_NAME
 from rag.embeddings import EmbeddingManager
-from rag.code_indexer import index as _vector_index
-from find_usages.indexer import index_project as _usages_index
-from find_usages.finder import UsageRecord, find_usages as _find_usages
+from rag.code_indexer import index
 from rag.snippet_reader import SearchResult, EnrichedSearchResult
 
 __all__ = [
     "index_all",
     "search_code",
     "search_code_with_snippets",
-    "find_symbol_usages",
 ]
 
 from rag.snippet_reader import read_snippets
@@ -29,7 +24,7 @@ def index_all(directory: str | os.PathLike[str] = ".", resume: bool = True) -> N
     """Index *directory* with both available back-ends.
 
     This helper simply forwards to :pyfunc:`rag.code_indexer.index` to create
-    the vector database and to :pyfunc:`find_usages.indexer.index_project` to
+    the vector database and to :pyfunc:`agent_tools.indexer.index_project` to
     create the static symbol usage index.
 
     Parameters
@@ -42,11 +37,8 @@ def index_all(directory: str | os.PathLike[str] = ".", resume: bool = True) -> N
     # Ensure we work with a string path
     directory_str = os.fspath(directory)
 
-    print("\n[1/2] Building vector index (Milvus/Gemini)…")
-    _vector_index(directory_str, resume=resume)
-
-    print("\n[2/2] Building usages index (Jedi)…")
-    _usages_index(directory_str)
+    print("\nBuilding vector index (Milvus/Gemini)…")
+    index(directory_str, resume=resume)
 
     print("\n✔ Indexing completed.")
 
@@ -95,35 +87,3 @@ def search_code_with_snippets(
     return read_snippets(
         search_code(question, top_k=top_k, collection_name=collection_name)
     )
-
-
-def find_symbol_usages(
-    root: str | os.PathLike[str],
-    target: str,
-    *,
-    index_file: str = USAGES_INDEX_FILE,
-) -> list[UsageRecord]:
-    """Find every occurrence of *target* inside *root*.
-
-    Wrapper around :pyfunc:`find_usages.finder.find_usages`.
-
-    Parameters
-    ----------
-    root:
-        Directory that was previously indexed with :pyfunc:`index_all` (or
-        :pyfunc:`find_usages.indexer.index_project`).
-    target:
-        Simple name (``"SomeClass"``) or fully-qualified name
-        (``"package.module.SomeClass"``) of the symbol we are looking for.
-    index_file:
-        Path to the JSON index file created by the indexing process.  Defaults
-        to ``"usages_index.json"`` in the current directory.
-
-    Returns
-    -------
-    list[UsageRecord]
-        One entry per usage location.
-    """
-
-    root_str = os.fspath(root)
-    return _find_usages(root_str, target=target, index_file=index_file)

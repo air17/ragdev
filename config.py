@@ -41,6 +41,3 @@ GEMINI_API_KEY = get_env_variable("GEMINI_API_KEY")
 
 # Default collection name
 DEFAULT_COLLECTION_NAME = get_env_variable("DEFAULT_COLLECTION_NAME", "code_chunks")
-
-# Default usages index file path
-USAGES_INDEX_FILE = get_env_variable("USAGES_INDEX_FILE", "usages_index.json")

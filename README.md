@@ -76,7 +76,7 @@ DEFAULT_COLLECTION_NAME=code_chunks
 ### Quick start with `main.py`
 
 ```python
-from main import index_all, search_code, search_code_with_snippets, find_symbol_usages
+from main import index_all, search_code, search_code_with_snippets
 
 # 1) build both indices (vector + symbol usages)
 index_all()  # or index_all(directory="/path/to/your/project")
@@ -92,11 +92,6 @@ for res in results_with_snippets:
     print(f"File: {res['entity']['filename']}, Lines: {res['entity']['start_line']}-{res['entity']['end_line']}")
     print(f"Snippet:\n{res['snippet']}")
     print("-" * 80)
-
-# 4) find all references to a symbol
-usages = find_symbol_usages(".", "YourClass")
-for u in usages:
-    print(u)
 ```
 
 ### Indexing Code Files
@@ -137,20 +132,6 @@ for hit in hits_with_snippets:
     print("Code snippet:")
     print(hit['snippet'])
     print("-" * 50)
-```
-
-### Finding Symbol Usages
-
-To find all usages of a symbol:
-
-```python
-from main import find_symbol_usages
-
-# Assuming the index has been built already with index_all()
-results = find_symbol_usages("path/to/your/project", "YourClass")
-
-for r in results:
-    print(f"Found in {r['path']} at line {r['line']}, column {r['column']}")
 ```
 
 ## Configuration Management
@@ -194,7 +175,7 @@ To run tests for a specific module:
 
 ```bash
 pytest rag/tests/
-pytest find_usages/tests/
+pytest agent_tools/tests/
 ```
 
 ## Pre-commit Hooks
