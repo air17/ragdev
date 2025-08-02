@@ -3,7 +3,7 @@ from google.genai import types, Client
 from config import GEMINI_API_KEY, DEFAULT_COLLECTION_NAME
 from agent_tools.grep import search_codebase
 from agent_tools.file_list import ls
-from agent_tools.read_file import read_file
+from agent_tools.read_file import read_file, scroll_up, scroll_down
 from rag.embeddings import EmbeddingManager
 from rag.reranker import rerank_results
 from rag.snippet_reader import read_snippets
@@ -33,6 +33,8 @@ class ChatAgent:
             "  • grep_search(query: str)\n"
             "  • read_file(path: str, start_line: int, end_line: int)\n"
             "  • ls(path: str)\n"
+            "  • scroll_up(path: str, start_line: int)\n"
+            "  • scroll_down(path: str, end_line: int)\n"
             "\nWhen you need to call a tool, respond exactly with:\n"
             'TOOL: <tool_name>("<argument without name>")\n'
             "Be careful to not add any extra text before or after the tool call.\n"
@@ -118,6 +120,12 @@ class ChatAgent:
                 )
             elif tool_name == "ls":
                 ls(args)
+            elif tool_name == "scroll_up":
+                path, start_line = map(lambda x: x.strip("'\""), args.split(", "))
+                result = scroll_up(path, int(start_line))
+            elif tool_name == "scroll_down":
+                path, end_line = map(lambda x: x.strip("'\""), args.split(", "))
+                result = scroll_down(path, int(end_line))
             else:
                 result = f"Error: unknown tool {tool_name}"
         except Exception as e:

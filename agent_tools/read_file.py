@@ -215,3 +215,19 @@ def read_file_with_context(
         parts.append("...")
         add_lines_summary(after_start, after_end)
     return "\n".join(parts)
+
+
+def scroll_down(path: str, end_line: int, lines: int = 100) -> str:
+    """Reads the next `lines` lines from a file, starting from `start_line`."""
+    new_start_line: int = end_line
+    new_end_line: int = end_line + lines - 1
+    return read_file(path, new_start_line, new_end_line, add_line_numbers=True)
+
+
+def scroll_up(path: str, start_line: int, lines: int = 100) -> str:
+    """Reads the previous `lines` lines from a file, starting from `start_line`."""
+    new_start_line: int = max(1, start_line - lines)
+    new_end_line: int = start_line - 1
+    if new_end_line < 1:
+        new_end_line = 1
+    return read_file(path, new_start_line, new_end_line, add_line_numbers=True)

@@ -3,7 +3,7 @@ import pytest
 import tempfile
 from unittest.mock import patch, mock_open
 
-from agent_tools.read_file import read_file
+from agent_tools.read_file import read_file, scroll_down, scroll_up
 
 
 class TestReadFile:
@@ -120,3 +120,29 @@ class TestReadFile:
             # Try to start reading beyond file end
             with pytest.raises(ValueError, match="start_line exceeds file length"):
                 read_file("dummy_path.txt", start_line=5)
+
+
+class TestScrollFunctions:
+    def test_scroll_down(self):
+        # Mock file content with 10 lines
+        mock_content = "\n".join([f"line{i}" for i in range(1, 11)]) + "\n"
+
+        with patch("builtins.open", mock_open(read_data=mock_content)):
+            # Scroll down from line 3, reading 4 lines (lines 3-6)
+            result = scroll_down("dummy_path.txt", end_line=3, lines=4)
+
+            # Should return lines 3-6 with line numbers
+            expected = "3: line3\n4: line4\n5: line5\n6: line6\n"
+            assert result == expected
+
+    def test_scroll_up(self):
+        # Mock file content with 10 lines
+        mock_content = "\n".join([f"line{i}" for i in range(1, 11)]) + "\n"
+
+        with patch("builtins.open", mock_open(read_data=mock_content)):
+            # Scroll up from line 7, reading 4 lines (lines 3-6)
+            result = scroll_up("dummy_path.txt", start_line=7, lines=4)
+
+            # Should return lines 3-6 with line numbers
+            expected = "3: line3\n4: line4\n5: line5\n6: line6\n"
+            assert result == expected
