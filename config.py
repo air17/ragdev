@@ -41,3 +41,6 @@ GEMINI_API_KEY = get_env_variable("GEMINI_API_KEY")
 
 # Default collection name
 DEFAULT_COLLECTION_NAME = get_env_variable("DEFAULT_COLLECTION_NAME", "code_chunks")
+
+# DeepSeeK configuration
+DEEPSEEK_API_KEY = get_env_variable("DEEPSEEK_API_KEY")

@@ -1,5 +1,6 @@
 google-genai
 numpy
+openai
 pymilvus
 pytest
 python-dotenv
