@@ -29,7 +29,7 @@ class ChatAgent:
             "Here is the root folder list of files and directories:\n"
             f"{ls()}\n\n"
             "You have these tools available, you can call them as many times as you need:\n"
-            "  • query_vector_db(question: str)\n"
+            "  • query_vector_db(question: str, dir_path: str = '')\n"
             "  • grep_search(query: str)\n"
             "  • read_file(path: str, start_line: int, end_line: int)\n"
             "  • ls(path: str)\n"
@@ -43,7 +43,7 @@ class ChatAgent:
             'TOOL: read_file("./relative/path/to/file.py", 12, 93)\n'
             "The agent will run the tool, append the result, and prompt you again.\n"
             "When using read_file: you can not read more than 100 lines at once (end_line - start_line <= 100).\n"
-            "When using query_vector_db it returns code chunks but they may be not full (half of class or function) so you may need to read the next lines with other tools.\n"
+            "When using query_vector_db it returns code chunks but they may be not full (half of class or function) so you may need to read the next lines with tools like scroll_down or read_file. dir_path is optional to specify which directory to search in.\n"
             "If you dont need extra context, or you have already got all the information you need, return your final answer in plain text (no TOOL: prefix)."
             "In your final answer cite code snippets from the codebase and add links to the codebase (grep format). Never ever make up code snippets.\n"
         )
@@ -95,10 +95,13 @@ class ChatAgent:
         # Dispatch
         try:
             if tool_name == "query_vector_db":
+                *query, dir_path = map(lambda x: x.strip("'\""), args.split(", "))
                 result = rerank_results(
                     args,
                     read_snippets(
-                        self.embedding_manager.retrieve_vectors_for_question(args, 10),
+                        self.embedding_manager.retrieve_vectors_for_question(
+                            ", ".join(query), 10, dir_path
+                        ),
                         base_dir=self.project_dir,
                     ),
                     max_results=5,

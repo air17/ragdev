@@ -325,7 +325,7 @@ class EmbeddingManager:
         )
 
     def retrieve_vectors_for_question(
-        self, question: str, top_k: int = 5
+        self, question: str, top_k: int = 5, dir_path: str | None = None
     ) -> list[MilvusSearchResult]:
         """
         Retrieve vectors from the collection that are most similar to the question.
@@ -345,12 +345,21 @@ class EmbeddingManager:
 
         self.milvus.load_collection(self.collection_name)
 
+        search_kwargs: dict = {}
+        if dir_path:
+            if dir_path in ("/", ".", "./"):
+                dir_path = None
+            if dir_path:
+                dir_path = dir_path.lstrip("./")
+                search_kwargs["filter"] = f"filename like '{dir_path}%'"
+
         # Perform the search
         results: list[list[dict]] = self.milvus.search(
             collection_name=self.collection_name,
             data=[question_embedding],
             output_fields=["filename", "start_line", "end_line"],
             limit=top_k,
+            **search_kwargs,
         )
         if not results or not results[0]:
             return []
