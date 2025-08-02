@@ -77,7 +77,7 @@ def split_node_into_chunks(
 
 
 def chunk_file(
-    path: str, max_lines: int = 30, max_func_lines: int = 50
+    path: str, max_lines: int = 40, max_func_lines: int = 70
 ) -> list[ChunkDict]:
     """
     Parse a Python file and split it into chunks.

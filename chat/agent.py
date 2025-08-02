@@ -5,10 +5,8 @@ from agent_tools.grep import search_codebase
 from agent_tools.file_list import ls
 from agent_tools.read_file import read_file
 from rag.embeddings import EmbeddingManager
+from rag.reranker import rerank_results
 from rag.snippet_reader import read_snippets
-
-DEFAULT_TREE_DEPTH: int = 5
-MAX_TREE_LENGTH: int = 20000
 
 
 class ChatAgent:
@@ -95,9 +93,13 @@ class ChatAgent:
         # Dispatch
         try:
             if tool_name == "query_vector_db":
-                result = read_snippets(
-                    self.embedding_manager.retrieve_vectors_for_question(args),
-                    base_dir=self.project_dir,
+                result = rerank_results(
+                    args,
+                    read_snippets(
+                        self.embedding_manager.retrieve_vectors_for_question(args, 10),
+                        base_dir=self.project_dir,
+                    ),
+                    max_results=5,
                 )
                 for record in result:
                     record.pop("id", None)

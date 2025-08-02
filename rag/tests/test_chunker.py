@@ -71,8 +71,8 @@ class TestChunker:
         mock_content = "".join(lines)
         mock_file.return_value.__enter__.return_value.read.return_value = mock_content
 
-        # Call the function with default max_func_lines=50
-        result = chunk_file("test.py")
+        # Call the function with max_func_lines=50
+        result = chunk_file("test.py", 30, 50)
 
         # Verify result - should be split into two chunks
         assert len(result) == 2
@@ -187,7 +187,7 @@ class TestChunker:
         mock_file.return_value.__enter__.return_value.read.return_value = mock_content
 
         # Call the function with default max_func_lines=50
-        result = chunk_file("test.py")
+        result = chunk_file("test.py", 30, 50)
 
         # Verify result
         assert len(result) == 3  # Class definition + 2 method chunks (split)

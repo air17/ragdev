@@ -1,4 +1,6 @@
 google-genai
+langchain
+langchain_deepseek
 numpy
 openai
 pymilvus
