@@ -34,17 +34,17 @@ def _results_to_documents(results: list[EnrichedSearchResult]) -> list[Document]
 
 def rerank_results(
     query: str, search_results: list[EnrichedSearchResult], max_results: int = 3
-) -> list[dict]:
+) -> list[EnrichedSearchResult]:
     """
     Rerank search results using the Deepseek model based on relevance to the query.
 
     Args:
         query (str): The original user query
-        search_results (list[dict]): List of search results to be reranked, expected to have a structure similar to MilvusSearchResult
+        search_results (list[EnrichedSearchResult]): List of search results to be reranked, expected to have a structure similar to MilvusSearchResult
         max_results (int): Maximum number of results to return after reranking
 
     Returns:
-        list[dict]: Reranked search results in order of relevance
+        list[EnrichedSearchResult]: Reranked search results in order of relevance
     """
     documents: list[Document] = _results_to_documents(search_results)
     reranker = LLMListwiseRerank.from_llm(

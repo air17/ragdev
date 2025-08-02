@@ -6,11 +6,11 @@ from openai.types.chat import (
     ChatCompletionSystemMessageParam,
 )
 
-from config import DEEPSEEK_API_KEY
+from config import DEEPSEEK_API_KEY, DEEPSEEK_BASE_URL
 
 deepseek_client = OpenAI(
     api_key=DEEPSEEK_API_KEY,
-    base_url="https://api.deepseek.com",
+    base_url=DEEPSEEK_BASE_URL,
 )
 
 
