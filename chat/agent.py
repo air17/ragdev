@@ -10,6 +10,7 @@ from openai.types.chat import (
     ChatCompletionToolParam,
     ChatCompletionMessage,
     ChatCompletionToolMessageParam,
+    ChatCompletionAssistantMessageParam,
 )
 from openai.types.shared_params import FunctionDefinition
 
@@ -249,7 +250,13 @@ Otherwise, you must use the tools to gather information until you have all neces
             print(
                 f"ASSISTANT_OUTPUT: {new_assistant_message.content}\nTOOL_CALLS: {new_assistant_message.tool_calls}"
             )
-            self.messages.append(new_assistant_message)
+            self.messages.append(
+                ChatCompletionAssistantMessageParam(
+                    content=new_assistant_message.content,
+                    role="assistant",
+                    tool_calls=new_assistant_message.tool_calls,
+                )
+            )
             if new_assistant_message.tool_calls:
                 iterations += 1
                 if iterations > self.max_iterations:
@@ -259,13 +266,14 @@ Otherwise, you must use the tools to gather information until you have all neces
                             role="system",
                         )
                     )
-                    return (
+                    self.messages.append(
                         self.deepseek.chat.completions.create(
                             model=self.model, messages=self.messages, tools=self.tools
                         )
                         .choices[0]
-                        .message.content
+                        .message
                     )
+                    return self.messages[-1].content
 
                 tool = new_assistant_message.tool_calls[0].function.name
                 args_json = new_assistant_message.tool_calls[0].function.arguments
