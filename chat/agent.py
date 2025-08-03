@@ -1,7 +1,6 @@
 import json
 from typing import TypedDict
 
-from google.genai import types, Client
 from openai import OpenAI
 from openai.types.chat import (
     ChatCompletion,
@@ -17,7 +16,6 @@ from openai.types.shared_params import FunctionDefinition
 from agent_tools.file_list import ls
 from agent_tools.grep import search_codebase
 from agent_tools.read_file import (
-    read_file,
     scroll_up,
     scroll_down,
     read_file_with_context,
@@ -39,7 +37,7 @@ class ChatAgent:
     ):
         self.messages: list[str | type[TypedDict]] = []
         self.max_iterations: int = max_iterations
-        self.gemini: Client = Client(api_key=api_key)
+        # self.gemini: Client = Client(api_key=api_key)
         self.deepseek: OpenAI = OpenAI(api_key=api_key, base_url=DEEPSEEK_BASE_URL)
         self.model: str = model
         self.project_dir = project_dir
@@ -177,64 +175,64 @@ Otherwise, you must use the tools to gather information until you have all neces
             f"{ls()}\n\n"
             "In your final answer cite code snippets from the codebase and add links to the codebase. Never ever make up code snippets.\n"
         )
-        if "gemini" in self.model:
-            self.system_prompt += (
-                "You have these tools available, you can call them as many times as you need:\n"
-                "  • query_vector_db(question: str, dir_path: str = '')\n"
-                "  • grep_search(query: str)\n"
-                "  • read_file(path: str, start_line: int, end_line: int)\n"
-                "  • ls(path: str)\n"
-                "  • scroll_up(path: str, start_line: int)\n"
-                "  • scroll_down(path: str, end_line: int)\n"
-                "\nWhen you need to call a tool, respond exactly with:\n"
-                'TOOL: <tool_name>("<argument without name>")\n'
-                "Be careful to not add any extra text before or after the tool call.\n"
-                "For example:\n"
-                'TOOL: query_vector_db("UserSerializer")'
-                'TOOL: read_file("./relative/path/to/file.py", 12, 93)\n'
-                "The agent will run the tool, append the result, and prompt you again.\n"
-                "When using read_file: you can not read more than 100 lines at once (end_line - start_line <= 100).\n"
-                "When using query_vector_db it returns code chunks but they may be not full (half of class or function) so you may need to read the next lines with tools like scroll_down or read_file. dir_path is optional to specify which directory to search in.\n"
-                "If you dont need extra context, or you have already got all the information you need, return your final answer in plain text (no TOOL: prefix)."
-            )
+        # if "gemini" in self.model:
+        #     self.system_prompt += (
+        #         "You have these tools available, you can call them as many times as you need:\n"
+        #         "  • query_vector_db(question: str, dir_path: str = '')\n"
+        #         "  • grep_search(query: str)\n"
+        #         "  • read_file(path: str, start_line: int, end_line: int)\n"
+        #         "  • ls(path: str)\n"
+        #         "  • scroll_up(path: str, start_line: int)\n"
+        #         "  • scroll_down(path: str, end_line: int)\n"
+        #         "\nWhen you need to call a tool, respond exactly with:\n"
+        #         'TOOL: <tool_name>("<argument without name>")\n'
+        #         "Be careful to not add any extra text before or after the tool call.\n"
+        #         "For example:\n"
+        #         'TOOL: query_vector_db("UserSerializer")'
+        #         'TOOL: read_file("./relative/path/to/file.py", 12, 93)\n'
+        #         "The agent will run the tool, append the result, and prompt you again.\n"
+        #         "When using read_file: you can not read more than 100 lines at once (end_line - start_line <= 100).\n"
+        #         "When using query_vector_db it returns code chunks but they may be not full (half of class or function) so you may need to read the next lines with tools like scroll_down or read_file. dir_path is optional to specify which directory to search in.\n"
+        #         "If you dont need extra context, or you have already got all the information you need, return your final answer in plain text (no TOOL: prefix)."
+        #     )
 
-    def get_gemini_response_text(self, user_question: str) -> str:
-        self.messages.append(f"User input: {user_question}")
-        iterations: int = 0
-
-        while True:
-            response: types.GenerateContentResponse = (
-                self.gemini.models.generate_content(
-                    model=self.model,
-                    contents=self.messages,
-                    config=types.GenerateContentConfig(
-                        system_instruction=self.system_prompt,
-                    ),
-                )
-            )
-            response_text: str = response.text
-            print(f"ASSISTANT_OUTPUT: {response_text}")
-            self.messages.append(f"Assistant input: {response_text}")
-
-            # Check for tool invocation
-            if response_text.strip().splitlines()[-1].strip().startswith("TOOL:"):
-                self.call_tool_gemini(response_text)
-                iterations += 1
-                if iterations > self.max_iterations:
-                    self.messages.append(
-                        "Error: too many iterations, answer with what you have so far"
-                    )
-                    return self.gemini.models.generate_content(
-                        model=self.model,
-                        contents=self.messages,
-                        config=types.GenerateContentConfig(
-                            system_instruction=self.system_prompt,
-                        ),
-                    ).text
-                continue
-            # No more TOOL calls → final answer
-            break
-        return response_text
+    # def get_gemini_response_text(self, user_question: str) -> str:
+    #     self.messages.append(f"User input: {user_question}")
+    #     iterations: int = 0
+    #
+    #     while True:
+    #         response: types.GenerateContentResponse = (
+    #             self.gemini.models.generate_content(
+    #                 model=self.model,
+    #                 contents=self.messages,
+    #                 config=types.GenerateContentConfig(
+    #                     system_instruction=self.system_prompt,
+    #                 ),
+    #             )
+    #         )
+    #         response_text: str = response.text
+    #         print(f"ASSISTANT_OUTPUT: {response_text}")
+    #         self.messages.append(f"Assistant input: {response_text}")
+    #
+    #         # Check for tool invocation
+    #         if response_text.strip().splitlines()[-1].strip().startswith("TOOL:"):
+    #             self.call_tool_gemini(response_text)
+    #             iterations += 1
+    #             if iterations > self.max_iterations:
+    #                 self.messages.append(
+    #                     "Error: too many iterations, answer with what you have so far"
+    #                 )
+    #                 return self.gemini.models.generate_content(
+    #                     model=self.model,
+    #                     contents=self.messages,
+    #                     config=types.GenerateContentConfig(
+    #                         system_instruction=self.system_prompt,
+    #                     ),
+    #                 ).text
+    #             continue
+    #         # No more TOOL calls → final answer
+    #         break
+    #     return response_text
 
     def get_deepseek_response_text(self, user_question: str) -> str:
         if not self.messages:
@@ -307,58 +305,58 @@ Otherwise, you must use the tools to gather information until you have all neces
             raise ValueError(f"Unsupported model: {self.model}")
         return response_text
 
-    def call_tool_gemini(self, call_text: str):
-        tool_call = call_text.strip().splitlines()[-1].strip()[5:].strip()
-        tool_name, args_str = tool_call.split("(", 1)
-        args = args_str.rstrip(")").strip().strip("'\"")
-        print(f"TOOL_CALL: {tool_name}({args})")
-        # Dispatch
-        result = ""
-        try:
-            if tool_name == "query_vector_db":
-                *query, dir_path = map(lambda x: x.strip("'\""), args.split(", "))
-                result = rerank_results(
-                    args,
-                    read_snippets(
-                        self.embedding_manager.retrieve_vectors_for_question(
-                            ", ".join(query), 10, dir_path
-                        ),
-                        base_dir=self.project_dir,
-                    ),
-                    max_results=5,
-                )
-                for record in result:
-                    record.pop("id", None)
-                    record.pop("distance", None)
-            elif tool_name == "grep_search":
-                result = search_codebase(args, self.project_dir)
-            elif tool_name == "read_file":
-                path, start_line, end_line = map(
-                    lambda x: x.strip("'\""), args.split(", ")
-                )
-                result = read_file(
-                    self.project_dir + "/" + path,
-                    int(start_line),
-                    int(end_line),
-                    add_line_numbers=True,
-                )
-            elif tool_name == "ls":
-                ls(args)
-            elif tool_name == "scroll_up":
-                path, start_line = map(lambda x: x.strip("'\""), args.split(", "))
-                result = scroll_up(path, int(start_line))
-            elif tool_name == "scroll_down":
-                path, end_line = map(lambda x: x.strip("'\""), args.split(", "))
-                result = scroll_down(path, int(end_line))
-            else:
-                result = f"Error: unknown tool {tool_name}"
-        except Exception as e:
-            result = f"Tool call failed with exception: {e}"
-
-        self.messages.append(
-            f"Tool call: tool name:{tool_name}({args}) result:\n{result}"
-        )
-        print("TOOL_RESULT:", str(result)[:100] + "...")
+    # def call_tool_gemini(self, call_text: str):
+    #     tool_call = call_text.strip().splitlines()[-1].strip()[5:].strip()
+    #     tool_name, args_str = tool_call.split("(", 1)
+    #     args = args_str.rstrip(")").strip().strip("'\"")
+    #     print(f"TOOL_CALL: {tool_name}({args})")
+    #     # Dispatch
+    #     result = ""
+    #     try:
+    #         if tool_name == "query_vector_db":
+    #             *query, dir_path = map(lambda x: x.strip("'\""), args.split(", "))
+    #             result = rerank_results(
+    #                 args,
+    #                 read_snippets(
+    #                     self.embedding_manager.retrieve_vectors_for_question(
+    #                         ", ".join(query), 10, dir_path
+    #                     ),
+    #                     base_dir=self.project_dir,
+    #                 ),
+    #                 max_results=5,
+    #             )
+    #             for record in result:
+    #                 record.pop("id", None)
+    #                 record.pop("distance", None)
+    #         elif tool_name == "grep_search":
+    #             result = search_codebase(args, self.project_dir)
+    #         elif tool_name == "read_file":
+    #             path, start_line, end_line = map(
+    #                 lambda x: x.strip("'\""), args.split(", ")
+    #             )
+    #             result = read_file(
+    #                 self.project_dir + "/" + path,
+    #                 int(start_line),
+    #                 int(end_line),
+    #                 add_line_numbers=True,
+    #             )
+    #         elif tool_name == "ls":
+    #             ls(args)
+    #         elif tool_name == "scroll_up":
+    #             path, start_line = map(lambda x: x.strip("'\""), args.split(", "))
+    #             result = scroll_up(path, int(start_line))
+    #         elif tool_name == "scroll_down":
+    #             path, end_line = map(lambda x: x.strip("'\""), args.split(", "))
+    #             result = scroll_down(path, int(end_line))
+    #         else:
+    #             result = f"Error: unknown tool {tool_name}"
+    #     except Exception as e:
+    #         result = f"Tool call failed with exception: {e}"
+    #
+    #     self.messages.append(
+    #         f"Tool call: tool name:{tool_name}({args}) result:\n{result}"
+    #     )
+    #     print("TOOL_RESULT:", str(result)[:100] + "...")
 
     def dispatch_tool_call(self, tool, args):
         if tool == "query_vector_db":
