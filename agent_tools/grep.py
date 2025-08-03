@@ -1,4 +1,4 @@
-from ripgrepy import Ripgrepy, RipGrepOut
+from ripgrepy import Ripgrepy
 
 
 def search_codebase(query: str, path: str = ".") -> str:
@@ -13,7 +13,9 @@ def search_codebase(query: str, path: str = ".") -> str:
         String containing search results with filenames and line numbers.
         Excludes files in 'tests' directories, files starting with 'test', and hidden files.
     """
-    results: RipGrepOut = (
+    max_results: int = 50
+
+    results: str = (
         Ripgrepy(query, path)
         .with_filename()
         .line_number()
@@ -22,6 +24,11 @@ def search_codebase(query: str, path: str = ".") -> str:
         .glob("!**/.*")  # skip hidden files/dirs
         .glob("!**/__*__/**")  # skip any __name__/ directory
         .run()
+        .as_string
     )
-
-    return results.as_string
+    lines: list[str] = results.splitlines()
+    if len(lines) > max_results:
+        lines = lines[:max_results] + [
+            f"... {len(lines) - max_results} results truncated ..."
+        ]
+    return "\n".join(lines)
