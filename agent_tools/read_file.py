@@ -5,7 +5,8 @@ from agent_tools.llms import query_deepseek
 
 IMPORT_RE = re.compile(r"^\s*(?:import|from)\b")
 TRIPLE_QUOTE_RE = re.compile(r'([\'"]{3})')
-MAX_LINES = 100
+MAX_LINES = 250
+DEFAULT_LINES = 100
 
 
 def read_file(
@@ -164,7 +165,7 @@ def read_file_with_context(
 
     # Normalize end_line
     if end_line is None:
-        end_line = start_line + 100
+        end_line = start_line + DEFAULT_LINES
     end_line = total_lines if end_line > total_lines else end_line
 
     # Extract import lines

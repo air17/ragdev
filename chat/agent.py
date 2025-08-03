@@ -47,19 +47,19 @@ class ChatAgent:
             ChatCompletionToolParam(
                 type="function",
                 function=FunctionDefinition(
-                    name="query_vector_db",
-                    description="Query a vector database for code snippets related to the question",
+                    name="semantic_search",
+                    description="Find snippets of code from the codebase most relevant to the search query.\\nThis is a semantic search tool, so the query should ask for something semantically matching what is needed.\\nIf it makes sense to only search in particular directories, please specify them in the target_directories field.\\nUnless there is a clear reason to use your own search query, please just reuse the user's exact query with their wording.\\nTheir exact wording/phrasing can often be helpful for the semantic search query. Keeping the same exact question format can also be helpful.",
                     parameters={
                         "type": "object",
                         "required": ["question"],
                         "properties": {
                             "question": {
                                 "type": "string",
-                                "description": "The question to search for similar vectors.",
+                                "description": "The search query to find relevant code.",
                             },
                             "dir_path": {
                                 "type": "string",
-                                "description": "The directory to search in (optional).",
+                                "description": "The directory to search over (optional).",
                             },
                         },
                     },
@@ -69,14 +69,14 @@ class ChatAgent:
                 type="function",
                 function=FunctionDefinition(
                     name="grep_search",
-                    description="Search for text patterns in the codebase using grep",
+                    description="Fast text-based regex search that finds exact pattern matches within files or directories, utilizing the ripgrep command for efficient searching.\\nResults will be formatted in the style of ripgrep and include line numbers and content.\\nTo avoid overwhelming output, the results are capped at 50 matches.\\n\\nThis is best for finding exact text matches or regex patterns.\\nMore precise than semantic search for finding specific strings or patterns.\\nThis is preferred over semantic search when we know the exact symbol/function name/etc. to search in some set of directories/file types.",
                     parameters={
                         "type": "object",
                         "required": ["query"],
                         "properties": {
                             "query": {
                                 "type": "string",
-                                "description": "The text pattern to search for in the codebase.",
+                                "description": "The regex pattern to search for",
                             },
                         },
                     },
@@ -86,22 +86,22 @@ class ChatAgent:
                 type="function",
                 function=FunctionDefinition(
                     name="read_file",
-                    description="Read a specific range of lines from a file",
+                    description="Read the contents of a file. The output of this tool call will be the 1-indexed file contents from start_line_one_indexed to end_line_one_indexed_inclusive, together with a summary of the lines outside start_line_one_indexed and end_line_one_indexed_inclusive.\\nNote that this call can view at most 250 lines at a time.\\n\\nWhen using this tool to gather information, it's your responsibility to ensure you have the COMPLETE context. Specifically, each time you call this command you should:\\n1) Assess if the contents you viewed are sufficient to proceed with your task.\\n2) Take note of where there are lines not shown.\\n3) If the file contents you have viewed are insufficient, and you suspect they may be in lines not shown, proactively call scroll_down or scroll_up tools to view those lines.\\n4) When in doubt, call this tool again to gather more information. Remember that partial file views may miss critical dependencies, imports, or functionality.",
                     parameters={
                         "type": "object",
-                        "required": ["path", "start_line"],
+                        "required": ["path", "start_line_one_indexed"],
                         "properties": {
                             "path": {
                                 "type": "string",
                                 "description": "The relative path to the file to read.",
                             },
-                            "start_line": {
+                            "start_line_one_indexed": {
                                 "type": "integer",
-                                "description": "The starting line number (1-indexed).",
+                                "description": "The one-indexed line number to start reading from (inclusive).",
                             },
-                            "end_line": {
+                            "end_line_one_indexed_inclusive": {
                                 "type": "integer",
-                                "description": "The ending line number (1-indexed). Must not exceed start_line + 100.",
+                                "description": "The one-indexed line number to end reading at (inclusive). Optional. Default is 100.",
                             },
                         },
                     },
@@ -110,15 +110,15 @@ class ChatAgent:
             ChatCompletionToolParam(
                 type="function",
                 function=FunctionDefinition(
-                    name="ls",
-                    description="List files and directories in a given path",
+                    name="list_dir",
+                    description="List the contents of a directory. The quick tool to use for discovery, before using more targeted tools like semantic search or file reading. Useful to try to understand the file structure before diving deeper into specific files. Can be used to explore the codebase.",
                     parameters={
                         "type": "object",
                         "required": ["path"],
                         "properties": {
                             "path": {
                                 "type": "string",
-                                "description": "The path to list contents of.",
+                                "description": "Path to list contents of, relative to the workspace root.",
                             },
                         },
                     },
@@ -128,16 +128,16 @@ class ChatAgent:
                 type="function",
                 function=FunctionDefinition(
                     name="scroll_up",
-                    description="Read lines above a given line in a file",
+                    description="Read 100 lines above a given line in a file",
                     parameters={
                         "type": "object",
-                        "required": ["path", "start_line"],
+                        "required": ["path", "line_from"],
                         "properties": {
                             "path": {
                                 "type": "string",
                                 "description": "The relative path to the file.",
                             },
-                            "start_line": {
+                            "line_from": {
                                 "type": "integer",
                                 "description": "The starting line number to scroll up from.",
                             },
@@ -149,18 +149,39 @@ class ChatAgent:
                 type="function",
                 function=FunctionDefinition(
                     name="scroll_down",
-                    description="Read lines below a given line in a file",
+                    description="Read 100 lines below a given line in a file",
                     parameters={
                         "type": "object",
-                        "required": ["path", "end_line"],
+                        "required": ["path", "line_from"],
                         "properties": {
                             "path": {
                                 "type": "string",
                                 "description": "The relative path to the file.",
                             },
-                            "end_line": {
+                            "line_from": {
                                 "type": "integer",
                                 "description": "The ending line number to scroll down from.",
+                            },
+                        },
+                    },
+                ),
+            ),
+            ChatCompletionToolParam(
+                type="function",
+                function=FunctionDefinition(
+                    name="terminal",
+                    description="Propose a command to run on behalf of the user in the project root directory.",
+                    parameters={
+                        "type": "object",
+                        "required": ["command", "explanation"],
+                        "properties": {
+                            "command": {
+                                "type": "string",
+                                "description": "The terminal command to execute.",
+                            },
+                            "explanation": {
+                                "description": "One sentence explanation as to why this command needs to be run and how it contributes to the goal.",
+                                "type": "string",
                             },
                         },
                     },
@@ -169,10 +190,19 @@ class ChatAgent:
         )
         self.system_prompt = (
             """You're a helpful assistant designed to quickly explore and clarify user ideas, investigate project structures, and retrieve relevant code snippets or information from files.
-If it's general question, that can be answered without exploring project just answer without calling tools.
+You have tools at your disposal to understand the codebase and gather more information.\n
+If it's a general question, that can be answered without exploring project just answer without calling tools.
 Otherwise, you must use the tools to gather information until you have all necessary context to answer the user question.\n"""
             "Here is the root folder list of files and directories:\n"
             f"{ls(self.project_dir)}\n\n"
+            """<search_and_reading>
+If you are unsure about the answer to the USER's request or how to satiate their request, you should gather more information.
+This can be done with additional tool calls, asking clarifying questions, etc...
+
+For example, if you've performed a semantic search, and the results may not fully answer the USER's request, or merit gathering more information, feel free to call more tools.
+
+Bias towards not asking the user for help if you can find the answer yourself.
+</search_and_reading>"""
             "In your final answer cite code snippets from the codebase and add links to the codebase. Never ever make up code snippets.\n"
         )
         # if "gemini" in self.model:
@@ -360,7 +390,7 @@ Otherwise, you must use the tools to gather information until you have all neces
 
     def dispatch_tool_call(self, tool, args):
         try:
-            if tool == "query_vector_db":
+            if tool == "semantic_search":
                 vector_results = rerank_results(
                     args["question"],
                     read_snippets(
@@ -380,21 +410,23 @@ Otherwise, you must use the tools to gather information until you have all neces
             elif tool == "read_file":
                 result = read_file_with_context(
                     self.project_dir + "/" + args["path"],
-                    int(args["start_line"]),
-                    args.get("end_line"),
+                    int(args["start_line_one_indexed"]),
+                    args.get("end_line_one_indexed_inclusive"),
                 )
-            elif tool == "ls":
+            elif tool == "list_dir":
                 result = ls(self.project_dir + "/" + args["path"])
             elif tool == "scroll_up":
                 result = scroll_up(
                     self.project_dir + "/" + args["path"],
-                    int(args["start_line"]),
+                    int(args["line_from"]),
                 )
             elif tool == "scroll_down":
                 result = scroll_down(
                     self.project_dir + "/" + args["path"],
-                    int(args["end_line"]),
+                    int(args["line_from"]),
                 )
+            elif tool == "terminal":
+                result = "The terminal is currently unavailable. Don't use it throughout this session."
             else:
                 result = f"Error: unknown tool {tool}"
         except Exception as e:
