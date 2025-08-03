@@ -91,7 +91,7 @@ class ChatAgent:
                     description="Read a specific range of lines from a file",
                     parameters={
                         "type": "object",
-                        "required": ["path", "start_line", "end_line"],
+                        "required": ["path", "start_line"],
                         "properties": {
                             "path": {
                                 "type": "string",
@@ -382,7 +382,7 @@ Otherwise, you must use the tools to gather information until you have all neces
             result = read_file_with_context(
                 self.project_dir + "/" + args["path"],
                 int(args["start_line"]),
-                int(args["end_line"]),
+                args.get("end_line"),
             )
         elif tool == "ls":
             result = ls(args["path"])

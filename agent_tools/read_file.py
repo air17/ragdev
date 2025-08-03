@@ -5,6 +5,7 @@ from agent_tools.llms import query_deepseek
 
 IMPORT_RE = re.compile(r"^\s*(?:import|from)\b")
 TRIPLE_QUOTE_RE = re.compile(r'([\'"]{3})')
+MAX_LINES = 100
 
 
 def read_file(
@@ -151,6 +152,9 @@ def read_file_with_context(
     if end_line is not None and end_line < start_line:
         raise ValueError("end_line must be >= start_line")
 
+    if end_line - start_line > MAX_LINES:
+        end_line = start_line + MAX_LINES
+
     # Read entire file once
     with open(path, "r", encoding="utf-8") as f:
         lines = f.readlines()
@@ -159,7 +163,9 @@ def read_file_with_context(
         return "Empty file"
 
     # Normalize end_line
-    end_line = total_lines if end_line is None or end_line > total_lines else end_line
+    if end_line is None:
+        end_line = start_line + 100
+    end_line = total_lines if end_line > total_lines else end_line
 
     # Extract import lines
     import_lines, last_import_line = extract_top_level_imports(path)
