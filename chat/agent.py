@@ -172,7 +172,7 @@ class ChatAgent:
 If it's general question, that can be answered without exploring project just answer without calling tools.
 Otherwise, you must use the tools to gather information until you have all necessary context to answer the user question.\n"""
             "Here is the root folder list of files and directories:\n"
-            f"{ls()}\n\n"
+            f"{ls(self.project_dir)}\n\n"
             "In your final answer cite code snippets from the codebase and add links to the codebase. Never ever make up code snippets.\n"
         )
         # if "gemini" in self.model:
@@ -359,41 +359,44 @@ Otherwise, you must use the tools to gather information until you have all neces
     #     print("TOOL_RESULT:", str(result)[:100] + "...")
 
     def dispatch_tool_call(self, tool, args):
-        if tool == "query_vector_db":
-            vector_results = rerank_results(
-                args["question"],
-                read_snippets(
-                    self.embedding_manager.retrieve_vectors_for_question(
-                        args["question"], 10, args.get("dir_path", None)
+        try:
+            if tool == "query_vector_db":
+                vector_results = rerank_results(
+                    args["question"],
+                    read_snippets(
+                        self.embedding_manager.retrieve_vectors_for_question(
+                            args["question"], 10, args.get("dir_path", None)
+                        ),
+                        base_dir=self.project_dir,
                     ),
-                    base_dir=self.project_dir,
-                ),
-                max_results=3,
-            )
-            for record in vector_results:
-                record.pop("id", None)
-                record.pop("distance", None)
-            result: str = json.dumps(vector_results)
-        elif tool == "grep_search":
-            result = search_codebase(args["query"], self.project_dir)
-        elif tool == "read_file":
-            result = read_file_with_context(
-                self.project_dir + "/" + args["path"],
-                int(args["start_line"]),
-                args.get("end_line"),
-            )
-        elif tool == "ls":
-            result = ls(args["path"])
-        elif tool == "scroll_up":
-            result = scroll_up(
-                self.project_dir + "/" + args["path"],
-                int(args["start_line"]),
-            )
-        elif tool == "scroll_down":
-            result = scroll_down(
-                self.project_dir + "/" + args["path"],
-                int(args["end_line"]),
-            )
-        else:
-            result = f"Error: unknown tool {tool}"
+                    max_results=3,
+                )
+                for record in vector_results:
+                    record.pop("id", None)
+                    record.pop("distance", None)
+                result: str = json.dumps(vector_results)
+            elif tool == "grep_search":
+                result = search_codebase(args["query"], self.project_dir)
+            elif tool == "read_file":
+                result = read_file_with_context(
+                    self.project_dir + "/" + args["path"],
+                    int(args["start_line"]),
+                    args.get("end_line"),
+                )
+            elif tool == "ls":
+                result = ls(self.project_dir + "/" + args["path"])
+            elif tool == "scroll_up":
+                result = scroll_up(
+                    self.project_dir + "/" + args["path"],
+                    int(args["start_line"]),
+                )
+            elif tool == "scroll_down":
+                result = scroll_down(
+                    self.project_dir + "/" + args["path"],
+                    int(args["end_line"]),
+                )
+            else:
+                result = f"Error: unknown tool {tool}"
+        except Exception as e:
+            result = f"Tool call failed with exception: {e}"
         return result
