@@ -16,7 +16,12 @@ from openai.types.shared_params import FunctionDefinition
 
 from agent_tools.file_list import ls
 from agent_tools.grep import search_codebase
-from agent_tools.read_file import read_file, scroll_up, scroll_down
+from agent_tools.read_file import (
+    read_file,
+    scroll_up,
+    scroll_down,
+    read_file_with_context,
+)
 from config import DEFAULT_COLLECTION_NAME, DEEPSEEK_BASE_URL, DEEPSEEK_API_KEY
 from rag.embeddings import EmbeddingManager
 from rag.reranker import rerank_results
@@ -374,11 +379,10 @@ Otherwise, you must use the tools to gather information until you have all neces
         elif tool == "grep_search":
             result = search_codebase(args["query"], self.project_dir)
         elif tool == "read_file":
-            result = read_file(
+            result = read_file_with_context(
                 self.project_dir + "/" + args["path"],
                 int(args["start_line"]),
                 int(args["end_line"]),
-                add_line_numbers=True,
             )
         elif tool == "ls":
             result = ls(args["path"])
@@ -386,13 +390,11 @@ Otherwise, you must use the tools to gather information until you have all neces
             result = scroll_up(
                 self.project_dir + "/" + args["path"],
                 int(args["start_line"]),
-                int(args["lines"]),
             )
         elif tool == "scroll_down":
             result = scroll_down(
                 self.project_dir + "/" + args["path"],
                 int(args["end_line"]),
-                int(args["lines"]),
             )
         else:
             result = f"Error: unknown tool {tool}"
