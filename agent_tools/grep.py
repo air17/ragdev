@@ -14,6 +14,7 @@ def search_codebase(query: str, path: str = ".") -> str:
         Excludes files in 'tests' directories, files starting with 'test', and hidden files.
     """
     max_results: int = 50
+    max_line_length: int = 300
 
     results: str = (
         Ripgrepy(query, path)
@@ -31,4 +32,10 @@ def search_codebase(query: str, path: str = ".") -> str:
         lines = lines[:max_results] + [
             f"... {len(lines) - max_results} results truncated ..."
         ]
+    lines = [
+        line[:max_line_length] + "... (line truncated)"
+        if len(line) > max_line_length
+        else line
+        for line in lines
+    ]
     return "\n".join(lines)

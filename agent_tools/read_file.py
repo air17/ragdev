@@ -152,7 +152,7 @@ def read_file_with_context(
     if end_line is not None and end_line < start_line:
         raise ValueError("end_line must be >= start_line")
 
-    if end_line - start_line > MAX_LINES:
+    if end_line is not None and end_line - start_line > MAX_LINES:
         end_line = start_line + MAX_LINES
 
     # Read entire file once
