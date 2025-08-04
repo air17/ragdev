@@ -1,3 +1,4 @@
+GitPython
 google-genai
 langchain
 langchain_deepseek
