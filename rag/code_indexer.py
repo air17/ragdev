@@ -28,11 +28,7 @@ DEFAULT_BATCH_SIZE: int = 100
 def process_directory(
     manager: EmbeddingManager,
     directory: str = ".",
-    file_extensions: tuple[str] = DEFAULT_FILE_EXTENSIONS,
-    max_lines: int = 30,
-    max_func_lines: int = 50,
     resume: bool = True,
-    batch_size: int = DEFAULT_BATCH_SIZE,
     dir_exclusions: tuple[str, ...] = DEFAULT_DIR_EXCLUSIONS,
     dir_within_parent_exclusions: tuple[
         tuple[str, str], ...
@@ -94,65 +90,12 @@ def process_directory(
                 )
             ]
             for filename in files:
-                file_path = os.path.join(root, filename)
-
-                file_ext = os.path.splitext(filename)[1].lower()
-                if file_ext not in file_extensions:
-                    continue
-
-                # Skip test files
-                if filename.lower().startswith("test_") or "tests/" in filename.lower():
-                    print(f"Skipping test file: {filename}")
-                    continue
-
-                rel_path = os.path.relpath(file_path, abs_directory)
-
-                # Skip already indexed files
-                if rel_path in indexed_files:
-                    print(f"Skipping already indexed file: {rel_path}")
-                    continue
-
-                print(f"Processing file: {rel_path}")
-                try:
-                    # Generate chunks for the file
-                    chunks = chunk_file(file_path, max_lines, max_func_lines)
-
-                    # Prepare batch processing variables
-                    batch_chunks: list[tuple[str, str, int, int]] = []
-
-                    # Process each chunk
-                    for chunk in chunks:
-                        start_line = chunk.get("start")
-                        end_line = chunk.get("end")
-                        chunk_content: str = read_file(file_path, start_line, end_line)
-                        batch_chunks.append(
-                            (chunk_content, rel_path, start_line, end_line)
-                        )
-
-                        # Add batch to vector database when batch size is reached
-                        if len(batch_chunks) >= batch_size:
-                            print(
-                                f"Adding batch of {len(batch_chunks)} chunks to vector DB"
-                            )
-                            manager.add_to_vector_in_batch(batch_chunks)
-                            batch_chunks = []
-
-                    # Add any remaining chunks in the last batch
-                    if batch_chunks:
-                        print(
-                            f"Adding final batch of {len(batch_chunks)} chunks to vector DB"
-                        )
-                        manager.add_to_vector_in_batch(batch_chunks)
-
-                    # Mark file as indexed
-                    indexed_files.add(rel_path)
-
-                    # Update state file after each file to handle interruptions
-                    with open(state_file_path, "w") as f:
-                        json.dump({"indexed_files": list(indexed_files)}, f)
-
-                except Exception as e:
-                    print(f"Error processing {rel_path}: {str(e)}")
+                process_file(
+                    manager=manager,
+                    root=root,
+                    filename=filename,
+                    indexed_files=indexed_files,
+                )
     except KeyboardInterrupt:
         print("\nIndexing interrupted. Progress has been saved.")
     except Exception as e:
@@ -162,6 +105,83 @@ def process_directory(
         with open(state_file_path, "w") as f:
             json.dump({"indexed_files": list(indexed_files)}, f)
         print(f"Indexed {len(indexed_files)} files. State saved to {state_file_path}")
+
+
+def process_file(
+    manager: EmbeddingManager,
+    root: str,
+    filename: str,
+    file_extensions: tuple[str] = DEFAULT_FILE_EXTENSIONS,
+    max_lines: int = 30,
+    max_func_lines: int = 50,
+    batch_size: int = DEFAULT_BATCH_SIZE,
+    indexed_files: set[str] | None = None,
+):
+    """
+    Process a single file and add its chunks to the vector database.
+
+    Args:
+        manager (EmbeddingManager): Instance of the embedding manager to handle vector DB operations.
+        root (str): Directory path containing the file.
+        filename (str): Name of the file to process.
+        file_extensions (tuple[str]): List of file extensions to process.
+        max_lines (int): Maximum number of lines for a regular chunk.
+        max_func_lines (int): Maximum number of lines for a function chunk.
+        batch_size (int): Number of chunks to process in each batch, defaults to 20.
+        indexed_files (tuple[str]): List of previously indexed files, defaults to an empty tuple.
+    """
+    file_path = os.path.join(root, filename)
+
+    file_ext = os.path.splitext(filename)[1].lower()
+    if file_ext not in file_extensions:
+        return
+
+    # Skip test files
+    if filename.lower().startswith("test_") or "tests/" in filename.lower():
+        print(f"Skipping test file: {filename}")
+        return
+
+    rel_path = os.path.relpath(file_path, root)
+
+    if indexed_files is None:
+        indexed_files = set()
+
+    # Skip already indexed files
+    if rel_path in indexed_files:
+        print(f"Skipping already indexed file: {rel_path}")
+        return
+
+    print(f"Processing file: {rel_path}")
+    try:
+        # Generate chunks for the file
+        chunks = chunk_file(file_path, max_lines, max_func_lines)
+
+        # Prepare batch processing variables
+        batch_chunks: list[tuple[str, str, int, int]] = []
+
+        # Process each chunk
+        for chunk in chunks:
+            start_line = chunk.get("start")
+            end_line = chunk.get("end")
+            chunk_content: str = read_file(file_path, start_line, end_line)
+            batch_chunks.append((chunk_content, rel_path, start_line, end_line))
+
+            # Add batch to vector database when batch size is reached
+            if len(batch_chunks) >= batch_size:
+                print(f"Adding batch of {len(batch_chunks)} chunks to vector DB")
+                manager.add_to_vector_in_batch(batch_chunks)
+                batch_chunks = []
+
+        # Add any remaining chunks in the last batch
+        if batch_chunks:
+            print(f"Adding final batch of {len(batch_chunks)} chunks to vector DB")
+            manager.add_to_vector_in_batch(batch_chunks)
+
+        # Mark file as indexed
+        indexed_files.add(rel_path)
+
+    except Exception as e:
+        print(f"Error processing {rel_path}: {str(e)}")
 
 
 def index(
@@ -207,3 +227,19 @@ def index(
         dir_within_parent_exclusions=dir_within_parent_exclusions,
         batch_size=batch_size,
     )
+
+
+def reindex_files(collection_name: str, file_paths: set[str], project_dir: str):
+    """
+    Reindex files in a given embedding collection by first deleting existing embeddings,
+    then processing each file to regenerate embeddings.
+
+    Args:
+        collection_name (str): The name of the embedding collection where the files belong.
+        file_paths (set[str]): A set of file paths to reindex.
+        project_dir (str): The root directory of the project where the files reside.
+    """
+    manager: EmbeddingManager = EmbeddingManager(collection_name=collection_name)
+    for file_path in file_paths:
+        manager.delete_embeddings(file_path)
+        process_file(manager, project_dir, file_path)
