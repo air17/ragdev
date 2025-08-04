@@ -1,4 +1,5 @@
 import json
+import os
 from typing import TypedDict
 
 from openai import OpenAI
@@ -188,23 +189,27 @@ class ChatAgent:
                 ),
             ),
         )
-        self.system_prompt = (
-            """You're a helpful assistant designed to quickly explore and clarify user ideas, investigate project structures, and retrieve relevant code snippets or information from files.
+        self.project_prompt = self._get_project_prompt()
+        self.system_prompt = f"""You're a helpful assistant designed to quickly explore and clarify user ideas,
+investigate project structures, and retrieve relevant code snippets or information from files.
 You have tools at your disposal to understand the codebase and gather more information.\n
 If it's a general question, that can be answered without exploring project just answer without calling tools.
-Otherwise, you must use the tools to gather information until you have all necessary context to answer the user question.\n"""
-            "Here is the root folder list of files and directories:\n"
-            f"{ls(self.project_dir)}\n\n"
-            """<search_and_reading>
+Otherwise, you must use the tools to gather information until you have all necessary context to answer the user question.\n
+
 If you are unsure about the answer to the USER's request or how to satiate their request, you should gather more information.
 This can be done with additional tool calls, asking clarifying questions, etc...
 
-For example, if you've performed a semantic search, and the results may not fully answer the USER's request, or merit gathering more information, feel free to call more tools.
+For example, if you've performed a semantic search, and the results may not fully answer the USER's request,
+or merit gathering more information, feel free to call more tools.
 
 Bias towards not asking the user for help if you can find the answer yourself.
-</search_and_reading>"""
-            "In your final answer cite code snippets from the codebase and add links to the codebase. Never ever make up code snippets.\n"
-        )
+
+In your final answer cite code snippets from the codebase and add links to the codebase. Never ever make up code snippets.
+
+Here is the root folder list of files and directories:"
+{ls(self.project_dir)}"
+{self.project_prompt}
+"""
         # if "gemini" in self.model:
         #     self.system_prompt += (
         #         "You have these tools available, you can call them as many times as you need:\n"
@@ -432,3 +437,11 @@ Bias towards not asking the user for help if you can find the answer yourself.
         except Exception as e:
             result = f"Tool call failed with exception: {e}"
         return result
+
+    def _get_project_prompt(self) -> str:
+        try:
+            with open(os.path.join(self.project_dir, "project_prompt.txt"), "r") as f:
+                prompt: str = "\nCodebase description:\n" + f.read()
+        except FileNotFoundError:
+            prompt = ""
+        return prompt
