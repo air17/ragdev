@@ -1,44 +1,291 @@
-from git import DiffIndex, Diff, Repo
+from git import DiffIndex, Repo, Commit
 
 from rag.code_indexer import reindex_files
 
 
+def get_submodule_old_commits_for_switch(repo: Repo) -> dict[str, Commit]:
+    """Store current commits for all submodules before switching."""
+    submodule_old_commits: dict[str, Commit] = {}
+
+    if not repo.submodules:
+        return submodule_old_commits
+
+    for submodule in repo.submodules:
+        try:
+            if submodule.module_exists():
+                sub_repo: Repo = submodule.module()
+                if sub_repo.head.is_valid():
+                    submodule_old_commits[submodule.name] = sub_repo.head.commit
+        except Exception as e:
+            print(
+                f"Warning: Failed to get current commit for submodule {submodule.name}: {e}"
+            )
+
+    return submodule_old_commits
+
+
+def switch_submodules_to_branch(repo: Repo, new_branch_name: str) -> None:
+    """Switch all submodules to the specified branch if it exists."""
+    if not repo.submodules:
+        return
+
+    for submodule in repo.submodules:
+        try:
+            if submodule.module_exists():
+                sub_repo: Repo = submodule.module()
+                # Check if the branch exists in the submodule
+                if new_branch_name in [
+                    ref.name.split("/")[-1] for ref in sub_repo.refs
+                ]:
+                    sub_repo.git.checkout(new_branch_name)
+                else:
+                    print(
+                        f"Warning: Branch {new_branch_name} does not exist in submodule {submodule.name}"
+                    )
+        except Exception as e:
+            print(
+                f"Warning: Failed to switch submodule {submodule.name} to branch {new_branch_name}: {e}"
+            )
+
+
+def get_main_repo_changed_files_for_switch(
+    repo: Repo, old_branch: str, new_branch: str
+) -> set[str]:
+    """Get changed files from main repository between two branches."""
+    try:
+        old_commit: Commit = repo.commit(old_branch)
+        new_commit: Commit = repo.commit(new_branch)
+        diff_index: DiffIndex = old_commit.diff(new_commit)
+        return {d.a_path or d.b_path for d in diff_index}
+    except Exception as e:
+        print(f"Warning: Failed to get changed files between branches: {e}")
+        return set()
+
+
+def get_submodule_changed_files_for_switch(
+    repo: Repo, submodule_old_commits: dict[str, Commit]
+) -> set[str]:
+    """Get changed files from all submodules after branch switch."""
+    changed_files: set[str] = set()
+
+    if not repo.submodules:
+        return changed_files
+
+    for submodule in repo.submodules:
+        try:
+            if not (
+                submodule.module_exists() and submodule.name in submodule_old_commits
+            ):
+                continue
+
+            sub_repo: Repo = submodule.module()
+            if not sub_repo.head.is_valid():
+                continue
+
+            sub_new_commit: Commit = sub_repo.head.commit
+            sub_old_commit: Commit = submodule_old_commits[submodule.name]
+
+            sub_diff_index: DiffIndex = sub_old_commit.diff(sub_new_commit)
+            submodule_changed_files: set[str] = {
+                f"{submodule.path}/{d.a_path or d.b_path}" for d in sub_diff_index
+            }
+            changed_files.update(submodule_changed_files)
+
+        except Exception as e:
+            print(
+                f"Warning: Failed to get changed files from submodule {submodule.name}: {e}"
+            )
+
+    return changed_files
+
+
 def switch_branch(collection_name: str, repo_dir: str, new_branch_name: str) -> None:
-    repo = Repo(repo_dir)
+    """
+    Switch to a new branch and all submodules, then reindex changed files.
+
+    Args:
+        collection_name: Name of the collection to reindex
+        repo_dir: Path to the repository directory
+        new_branch_name: Name of the branch to switch to
+    """
+    repo: Repo = Repo(repo_dir)
     current_branch: str = repo.active_branch.name
+
     if new_branch_name == current_branch:
         return
 
+    # Store old submodule commits before switching
+    submodule_old_commits: dict[str, Commit] = get_submodule_old_commits_for_switch(
+        repo
+    )
+
+    # Switch main repository
     repo.git.checkout(new_branch_name)
 
-    files_diff: DiffIndex[Diff] = repo.commit(new_branch_name).diff(current_branch)
-    changed_files: set[str] = set()
-    for diff in files_diff:
-        blob = diff.a_blob or diff.b_blob
-        if blob and blob.path:
-            changed_files.add(blob.path)
+    # Switch all submodules to the new branch
+    switch_submodules_to_branch(repo, new_branch_name)
 
-    if not changed_files:
+    # Get all changed files from main repo and submodules
+    main_changed_files: set[str] = get_main_repo_changed_files_for_switch(
+        repo, current_branch, new_branch_name
+    )
+    submodule_changed_files: set[str] = get_submodule_changed_files_for_switch(
+        repo, submodule_old_commits
+    )
+
+    all_changed_files: set[str] = main_changed_files.union(submodule_changed_files)
+
+    if not all_changed_files:
+        print("No changed files found. Skipping reindexing.")
+        return
+    print(f"Changed files: {all_changed_files}")
+
+    # Reindex the changed files
+    reindex_files(collection_name, all_changed_files, repo_dir)
+
+
+def fetch_main_repository(repo: Repo) -> tuple[Commit, Commit]:
+    """Fetch main repository and return old and new remote commits."""
+    remote_name: str = repo.remotes[0].name
+    current_branch: str = repo.active_branch.name
+
+    old_remote_commit: Commit = repo.remotes[remote_name].refs[current_branch].commit
+    repo.git.fetch("--all", "--prune")
+    new_remote_commit: Commit = repo.remotes[remote_name].refs[current_branch].commit
+
+    return old_remote_commit, new_remote_commit
+
+
+def get_submodule_old_commits(repo: Repo) -> dict[str, Commit]:
+    """Store old remote commits for all submodules before fetching."""
+    submodule_old_commits: dict[str, Commit] = {}
+
+    if not repo.submodules:
+        return submodule_old_commits
+
+    for submodule in repo.submodules:
+        try:
+            if submodule.module_exists():
+                sub_repo: Repo = submodule.module()
+                if sub_repo.remotes:
+                    sub_remote_name: str = sub_repo.remotes[0].name
+                    sub_current_branch: str = sub_repo.active_branch.name
+                    submodule_old_commits[submodule.name] = (
+                        sub_repo.remotes[sub_remote_name]
+                        .refs[sub_current_branch]
+                        .commit
+                    )
+            else:
+                submodule.update(init=True, recursive=True)
+        except Exception as e:
+            print(f"Warning: Failed to process submodule {submodule.name}: {e}")
+
+    return submodule_old_commits
+
+
+def fetch_submodules(repo: Repo) -> None:
+    """Fetch all submodules."""
+    if not repo.submodules:
         return
 
-    reindex_files(collection_name, changed_files, repo_dir)
+    for submodule in repo.submodules:
+        try:
+            if submodule.module_exists():
+                sub_repo: Repo = submodule.module()
+                if sub_repo.remotes:
+                    sub_repo.git.fetch("--prune")
+        except Exception as e:
+            print(f"Warning: Failed to fetch submodule {submodule.name}: {e}")
+
+
+def get_main_repo_changed_files(old_commit: Commit, new_commit: Commit) -> set[str]:
+    """Get changed files from main repository between two commits."""
+    diff_index: DiffIndex = old_commit.diff(new_commit)
+    return {d.a_path or d.b_path for d in diff_index}
+
+
+def get_submodule_changed_files(
+    repo: Repo, submodule_old_commits: dict[str, Commit]
+) -> set[str]:
+    """Get changed files from all submodules."""
+    changed_files: set[str] = set()
+
+    if not repo.submodules:
+        return changed_files
+
+    for submodule in repo.submodules:
+        try:
+            if not (
+                submodule.module_exists() and submodule.name in submodule_old_commits
+            ):
+                continue
+
+            sub_repo: Repo = submodule.module()
+            if not sub_repo.remotes:
+                continue
+
+            sub_remote_name: str = sub_repo.remotes[0].name
+            sub_current_branch: str = sub_repo.active_branch.name
+            sub_new_remote_commit: Commit = (
+                sub_repo.remotes[sub_remote_name].refs[sub_current_branch].commit
+            )
+            sub_old_remote_commit: Commit = submodule_old_commits[submodule.name]
+
+            sub_diff_index: DiffIndex = sub_old_remote_commit.diff(
+                sub_new_remote_commit
+            )
+            submodule_changed_files: set[str] = {
+                f"{submodule.path}/{d.a_path or d.b_path}" for d in sub_diff_index
+            }
+            changed_files.update(submodule_changed_files)
+
+        except Exception as e:
+            print(
+                f"Warning: Failed to get changed files from submodule {submodule.name}: {e}"
+            )
+
+    return changed_files
 
 
 def fetch_current_branch(collection_name: str, repo_dir: str) -> None:
-    repo = Repo(repo_dir)
-    remote_name: str = repo.remotes[0].name
+    """
+    Fetch the current branch and all submodules, then reindex changed files.
 
-    repo.git.fetch("--all", "--prune")
+    Args:
+        collection_name: Name of the collection to reindex
+        repo_dir: Path to the repository directory
+    """
+    repo: Repo = Repo(repo_dir)
 
-    current_branch: str = repo.active_branch.name
-    remote_ref: str = repo.remotes[remote_name].refs[current_branch].name
+    # Store old submodule commits before any fetching
+    submodule_old_commits: dict[str, Commit] = get_submodule_old_commits(repo)
 
-    diff_index = repo.commit(current_branch).diff(remote_ref)
-    changed_files: set[str] = {d.a_path or d.b_path for d in diff_index}
+    # Fetch main repository and get changed commits
+    old_remote_commit: Commit
+    new_remote_commit: Commit
+    old_remote_commit, new_remote_commit = fetch_main_repository(repo)
 
-    repo.git.branch("--set-upstream-to", remote_ref, current_branch)
+    # Fetch all submodules
+    fetch_submodules(repo)
 
-    reindex_files(collection_name, changed_files, repo_dir)
+    # Get all changed files from main repo and submodules
+    main_changed_files: set[str] = get_main_repo_changed_files(
+        old_remote_commit, new_remote_commit
+    )
+    submodule_changed_files: set[str] = get_submodule_changed_files(
+        repo, submodule_old_commits
+    )
+
+    all_changed_files: set[str] = main_changed_files.union(submodule_changed_files)
+
+    if not all_changed_files:
+        print("No changes detected in the repository.")
+        return
+    else:
+        print(f"Changed files: {all_changed_files}")
+
+    # Reindex the changed files
+    reindex_files(collection_name, all_changed_files, repo_dir)
 
 
 def get_current_branch(repo_dir: str) -> str | None:
