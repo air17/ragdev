@@ -124,6 +124,7 @@ def read_file_with_context(
     path: str,
     start_line: int = 1,
     end_line: int | None = None,
+    add_imports: bool = False,
 ) -> str:
     """
     Read content from a file with additional context including imports and summaries.
@@ -142,6 +143,7 @@ def read_file_with_context(
         path: Path to the file to read.
         start_line: First line to read (1-based indexing, default: 1).
         end_line: Last line to read (inclusive). If None, reads until end of file.
+        add_imports: Whether to add imports at the top of the file.
 
     Returns:
         String containing imports, optional inlined context or summaries, and the requested content.
@@ -174,7 +176,11 @@ def read_file_with_context(
     parts: list[str] = []
 
     # 1) Prepend imports if they lie entirely outside [start_line, end_line]
-    if import_lines and not (start_line <= last_import_line <= end_line):
+    if (
+        add_imports
+        and import_lines
+        and not (start_line <= last_import_line <= end_line)
+    ):
         parts.append("# Imports from file:")
         parts.append(import_lines)
         parts.append("")
