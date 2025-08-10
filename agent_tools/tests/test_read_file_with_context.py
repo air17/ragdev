@@ -13,19 +13,19 @@ from agent_tools.read_file import read_file_with_context
 def test_empty_path():
     """Test that empty path raises ValueError."""
     with pytest.raises(ValueError, match="Path cannot be empty"):
-        read_file_with_context("")
+        read_file_with_context("", add_imports=True)
 
 
 def test_invalid_start_line():
     """Test that start_line < 1 raises ValueError."""
     with pytest.raises(ValueError, match="start_line must be at least 1"):
-        read_file_with_context("test.py", start_line=0)
+        read_file_with_context("test.py", start_line=0, add_imports=True)
 
 
 def test_invalid_end_line():
     """Test that end_line < start_line raises ValueError."""
     with pytest.raises(ValueError, match="end_line must be >= start_line"):
-        read_file_with_context("test.py", start_line=5, end_line=3)
+        read_file_with_context("test.py", start_line=5, end_line=3, add_imports=True)
 
 
 @patch("builtins.open", new_callable=mock_open, read_data="   \n  \n\n")
@@ -34,7 +34,7 @@ def test_empty_file(mock_extract, mock_file):
     """Test handling of empty file (only whitespace)."""
     mock_extract.return_value = ("", 0)
 
-    result = read_file_with_context("empty.py")
+    result = read_file_with_context("empty.py", add_imports=True)
     assert result == "Empty file"
 
 
@@ -48,7 +48,7 @@ def test_simple_file_no_imports(mock_extract, mock_file):
     """Test reading a simple file with no imports."""
     mock_extract.return_value = ("", 0)
 
-    result = read_file_with_context("simple.py")
+    result = read_file_with_context("simple.py", add_imports=True)
     expected = "1: print('hello')\n2: print('world')\n"
     assert result == expected
 
@@ -63,7 +63,9 @@ def test_file_with_imports_included_in_range(mock_extract, mock_file):
     """Test file with imports that are included in the requested range."""
     mock_extract.return_value = ("1: import os\n2: import sys\n", 2)
 
-    result = read_file_with_context("with_imports.py", start_line=1, end_line=3)
+    result = read_file_with_context(
+        "with_imports.py", start_line=1, end_line=3, add_imports=True
+    )
     expected = "1: import os\n2: import sys\n3: print('hello')\n"
     assert result == expected
 
@@ -78,7 +80,9 @@ def test_file_with_imports_outside_range(mock_extract, mock_file):
     """Test file with imports outside the requested range."""
     mock_extract.return_value = ("1: import os\n2: import sys\n", 2)
 
-    result = read_file_with_context("with_imports.py", start_line=3, end_line=4)
+    result = read_file_with_context(
+        "with_imports.py", start_line=3, end_line=4, add_imports=True
+    )
     expected = "# Imports from file:\n1: import os\n2: import sys\n\n\n3: print('hello')\n4: print('world')\n"
     assert result == expected
 
@@ -98,7 +102,9 @@ def test_long_file_with_summaries(mock_summarize, mock_extract, mock_file):
         "Summary of lines after main content",
     ]
 
-    result = read_file_with_context("long.py", start_line=15, end_line=17)
+    result = read_file_with_context(
+        "long.py", start_line=15, end_line=17, add_imports=True
+    )
 
     # Should include imports, summary of lines 2-14 (13 lines > 10), main content 15-17, summary of lines 18-30 (13 lines > 10)
     assert "# Imports from file:" in result
@@ -122,7 +128,9 @@ def test_short_context_inlined(mock_extract, mock_file):
 
     mock_extract.return_value = ("1: import os\n", 1)
 
-    result = read_file_with_context("medium.py", start_line=6, end_line=10)
+    result = read_file_with_context(
+        "medium.py", start_line=6, end_line=10, add_imports=True
+    )
 
     # Lines 2-5 (4 lines) should be inlined, not summarized
     assert "2: line 2" in result
@@ -144,7 +152,9 @@ def test_end_line_none(mock_extract, mock_file):
     """Test that end_line=None reads to end of file."""
     mock_extract.return_value = ("1: import os\n", 1)
 
-    result = read_file_with_context("test.py", start_line=2, end_line=None)
+    result = read_file_with_context(
+        "test.py", start_line=2, end_line=None, add_imports=True
+    )
     expected = "# Imports from file:\n1: import os\n\n\n2: print('hello')\n"
     assert result == expected
 
@@ -155,7 +165,9 @@ def test_end_line_beyond_file(mock_extract, mock_file):
     """Test that end_line beyond file length is normalized."""
     mock_extract.return_value = ("1: import os\n", 1)
 
-    result = read_file_with_context("test.py", start_line=2, end_line=100)
+    result = read_file_with_context(
+        "test.py", start_line=2, end_line=100, add_imports=True
+    )
     expected = "# Imports from file:\n1: import os\n\n\n2: print('hello')\n"
     assert result == expected
 
@@ -166,7 +178,9 @@ def test_start_line_adjusted_by_imports(mock_extract, mock_file):
     """Test that start_line is adjusted when it overlaps with imports."""
     mock_extract.return_value = ("1: import os\n2: import sys\n", 2)
 
-    result = read_file_with_context("test.py", start_line=1, end_line=2)
+    result = read_file_with_context(
+        "test.py", start_line=1, end_line=2, add_imports=True
+    )
     # When start_line overlaps with imports, it should be adjusted
     expected = "1: import os\n2: import sys\n"
     assert result == expected
@@ -201,7 +215,9 @@ if __name__ == "__main__":
                 3,
             )
 
-            result = read_file_with_context(temp_path, start_line=5, end_line=7)
+            result = read_file_with_context(
+                temp_path, start_line=5, end_line=7, add_imports=True
+            )
 
             # Should include imports and the requested lines
             assert "# Imports from file:" in result
@@ -212,3 +228,16 @@ if __name__ == "__main__":
 
     finally:
         os.unlink(temp_path)
+
+
+@patch("builtins.open", new_callable=mock_open, read_data="import os\nprint('hello')\n")
+@patch("agent_tools.read_file.extract_top_level_imports")
+def test_add_imports_false(mock_extract, mock_file):
+    """Test that imports are included but without the 'Imports from file' header when add_imports=False."""
+    mock_extract.return_value = ("1: import os\n", 1)
+
+    result = read_file_with_context(
+        "test.py", start_line=2, end_line=3, add_imports=False
+    )
+    expected = "2: print('hello')\n"
+    assert result == expected
