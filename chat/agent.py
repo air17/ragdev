@@ -21,6 +21,7 @@ from agent_tools.read_file import (
     scroll_down,
     read_file_with_context,
 )
+from chat.sessions import ChatSession
 from config import DEFAULT_COLLECTION_NAME, DEEPSEEK_BASE_URL, DEEPSEEK_API_KEY
 from rag.embeddings import EmbeddingManager
 from rag.reranker import rerank_results
@@ -35,12 +36,18 @@ class ChatAgent:
         api_key: str = DEEPSEEK_API_KEY,
         model: str = "deepseek-reasoner",
         max_iterations: int = 15,
-    ):
-        self.messages: list[str | type[TypedDict]] = []
+        session: ChatSession | None = None,
+    ) -> None:
+        # session is optional; if provided, messages are loaded from it and persisted there
+        self.session: ChatSession | None = session
+        self.messages: list[type[TypedDict]] = (
+            self.session.get_messages() if self.session else []
+        )
+
         self.max_iterations: int = max_iterations
         self.deepseek: OpenAI = OpenAI(api_key=api_key, base_url=DEEPSEEK_BASE_URL)
         self.model: str = model
-        self.project_dir = project_dir
+        self.project_dir: str = project_dir
         self.embedding_manager = EmbeddingManager(collection_name=collection_name)
 
         self.tools: tuple[ChatCompletionToolParam, ...] = (
@@ -212,12 +219,12 @@ Here is the root folder list of files and directories:
 
     def get_deepseek_response_text(self, user_question: str) -> str:
         if not self.messages:
-            self.messages.append(
+            self._append_message(
                 ChatCompletionSystemMessageParam(
                     content=self.system_prompt, role="system"
                 )
             )
-        self.messages.append(
+        self._append_message(
             ChatCompletionUserMessageParam(content=user_question, role="user")
         )
         iterations: int = 0
@@ -229,7 +236,7 @@ Here is the root folder list of files and directories:
             print(
                 f"ASSISTANT_OUTPUT: {new_assistant_message.content}\nTOOL_CALLS: {new_assistant_message.tool_calls}"
             )
-            self.messages.append(
+            self._append_message(
                 ChatCompletionAssistantMessageParam(
                     content=new_assistant_message.content,
                     role="assistant",
@@ -239,13 +246,13 @@ Here is the root folder list of files and directories:
             if new_assistant_message.tool_calls:
                 iterations += 1
                 if iterations > self.max_iterations:
-                    self.messages.append(
+                    self._append_message(
                         ChatCompletionSystemMessageParam(
                             content="Error: too many iterations, answer with what you have so far",
                             role="system",
                         )
                     )
-                    self.messages.append(
+                    self._append_message(
                         self.deepseek.chat.completions.create(
                             model=self.model, messages=self.messages, tools=self.tools
                         )
@@ -261,7 +268,7 @@ Here is the root folder list of files and directories:
                 # Dispatch
                 result: str = self.dispatch_tool_call(tool, args)
                 print(f"TOOL_RESULT: {result}")
-                self.messages.append(
+                self._append_message(
                     ChatCompletionToolMessageParam(
                         role="tool",
                         tool_call_id=new_assistant_message.tool_calls[0].id,
@@ -323,6 +330,12 @@ Here is the root folder list of files and directories:
         except Exception as e:
             result = f"Tool call failed with exception: {e}"
         return result
+
+    def _append_message(self, message: type[TypedDict]) -> None:
+        """Append message to in-memory history and persist if session provided."""
+        self.messages.append(message)
+        if self.session:
+            self.session.append_messages([message])
 
     def _get_project_prompt(self) -> str:
         try:
