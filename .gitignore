@@ -78,3 +78,4 @@ cython_debug/
 usages_index.json
 /.indexer_state*
 *.db
+*Zone.Identifier

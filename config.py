@@ -45,3 +45,6 @@ DEFAULT_COLLECTION_NAME = get_env_variable("DEFAULT_COLLECTION_NAME", "code_chun
 # DeepSeeK configuration
 DEEPSEEK_API_KEY = get_env_variable("DEEPSEEK_API_KEY")
 DEEPSEEK_BASE_URL = get_env_variable("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
+
+# Telegram configuration
+TELEGRAM_BOT_TOKEN = get_env_variable("TELEGRAM_BOT_TOKEN")

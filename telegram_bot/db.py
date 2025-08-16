@@ -49,7 +49,7 @@ class User:
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     last_seen: Optional[datetime] = None
-    is_active: bool = True
+    is_active: bool = False
     user_state: Optional[str] = None
     user_role: str = "user"
     settings: Optional[Dict[str, Any]] = field(default_factory=dict)
