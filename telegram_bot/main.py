@@ -10,9 +10,17 @@ from aiogram.fsm.state import State, StatesGroup
 from typing import Callable, Any, Awaitable
 
 import config
+from chat.agent import ChatAgent
+from chat.sessions import ChatSessionManager
 from telegram_bot import const
 from telegram_bot.const import BotConstants
-from telegram_bot.db import create_user_from_telegram, AsyncUserDatabase, DatabaseError
+from telegram_bot.db import (
+    create_user_from_telegram,
+    AsyncUserDatabase,
+    DatabaseError,
+    User,
+    ChatSession,
+)
 
 
 # Example FSM states
@@ -47,8 +55,12 @@ class BotEventHandler:
             self.handle_name_input, UserStates.waiting_for_name
         )
 
+        # Chat command handlers
+        self.router.message.register(self.handle_chat_command, Command("chat"))
+        self.router.message.register(self.handle_my_chats_command, Command("my_chats"))
+
         # General message handler (should be last)
-        self.router.message.register(self.handle_any_message)
+        self.router.message.register(self.handle_chat_message)
 
         # Callback query handlers
         self.router.callback_query.register(self.handle_any_callback)
@@ -109,6 +121,8 @@ class BotEventHandler:
             await message.answer(
                 const.WELCOME_MESSAGE.format(first_name=message.from_user.first_name)
             )
+
+            await self.db.update_user(user.user_id, current_session_id=None)
 
         except DatabaseError as e:
             self.logger.error(f"Database error in start command: {e}")
@@ -229,7 +243,7 @@ class BotEventHandler:
                 users=len(users),
             )
 
-            await message.answer(admin_text, parse_mode="Markdown")
+            await message.answer(admin_text, parse_mode=None)
 
         except DatabaseError as e:
             self.logger.error(f"Database error in admin command: {e}")
@@ -435,6 +449,111 @@ class BotEventHandler:
             self.logger.error(f"Database error in settings command: {e}")
             await message.answer(const.SETTINGS_ERROR)
 
+    async def handle_chat_command(self, message: Message, state: FSMContext):
+        """Handle /chat command to start a new chat session"""
+        try:
+            # Get the session name from command arguments or use user's first name
+            session_name: str | None = (
+                message.text.split(maxsplit=1)[1]
+                if len(message.text.split()) > 1
+                else None
+            )
+            if not session_name or len(session_name) > 100:
+                session_name = None
+
+            # Sanitize the session name
+            if session_name and any(char in session_name for char in ["<", ">", "&"]):
+                await message.answer(
+                    "Session name cannot contain <, >, or & characters."
+                )
+                return
+
+            # Check if a session with this name already exists for the user
+            existing_session: ChatSession | None = None
+            if session_name:
+                sessions = await self.db.list_chat_sessions(
+                    user_id=message.from_user.id
+                )
+                existing_session = next(
+                    (s for s in sessions if s.name == session_name), None
+                )
+
+            if existing_session:
+                # Switch to existing session
+                session_id = existing_session.session_id
+                await message.answer(
+                    f"Switched to the existing chat session: {session_name}"
+                )
+            else:
+                # Create new session
+                session_id = ChatSessionManager().active_session
+                await self.db.create_chat_session(
+                    user_id=message.from_user.id,
+                    session_id=session_id,
+                    name=session_name,
+                )
+                await message.answer("Created new chat session")
+
+            # Update user's current session
+            await self.db.update_user(
+                user_id=message.from_user.id, current_session_id=session_id
+            )
+
+            # Reset FSM state to handle new chat messages
+            await state.set_state()
+
+        except Exception as e:
+            self.logger.error(f"Error in handle_chat_command: {e}")
+            await message.answer(
+                "An error occurred while processing your request. Please try again later."
+            )
+
+    async def handle_my_chats_command(self, message: Message, state: FSMContext):
+        """Handle /my_chats command to list all chat sessions for the user"""
+        try:
+            # Get all chat sessions for the user
+            sessions: list[ChatSession] = await self.db.list_chat_sessions(
+                user_id=message.from_user.id
+            )
+
+            if not sessions:
+                await message.answer(
+                    "You don't have any chat sessions yet. Use /chat to create one!"
+                )
+                return
+
+            # Format sessions into a numbered list
+            response = ["📋 Your chat sessions:"]
+            for i, session in enumerate(sessions, 1):
+                # Format the last activity time if available
+                last_active = ""
+                if session.last_activity:
+                    last_active = f" (last active: {session.last_activity.strftime('%Y-%m-%d %H:%M')})"
+
+                # Add session name and message count
+                response.append(
+                    f"{i}. <code>{session.name}</code>{last_active} - {session.message_count} messages"
+                )
+
+            # Add current session indicator if any
+            user = await self.db.get_user(message.from_user.id)
+            if user and user.current_session_id:
+                current_session = next(
+                    (s for s in sessions if s.session_id == user.current_session_id),
+                    None,
+                )
+                if current_session:
+                    response.append(f"\n💬 Current session: {current_session.name}")
+
+            # Send the response
+            await message.answer("\n".join(response), parse_mode="HTML")
+
+        except Exception as e:
+            self.logger.error(f"Error listing chat sessions: {e}")
+            await message.answer(
+                "❌ An error occurred while fetching your chat sessions. Please try again later."
+            )
+
     # ==================== FSM STATE HANDLERS ====================
 
     async def handle_name_input(self, message: Message, state: FSMContext):
@@ -447,49 +566,85 @@ class BotEventHandler:
 
     # ==================== MESSAGE HANDLERS ====================
 
-    async def handle_any_message(self, message: Message, state: FSMContext):
+    @staticmethod
+    async def handle_current_state(message: Message, state: FSMContext):
         """
         Handle any text message
         """
+        # Check current FSM state
+        current_state = await state.get_state()
+        if not current_state:
+            return False
+
+        # Handle based on current FSM state
+        if current_state == UserStates.in_settings.state:
+            if message.text.lower() == "name":
+                await message.answer("👤 Please enter your new name:")
+                await state.set_state(UserStates.waiting_for_name)
+            elif message.text.lower() == "done":
+                await message.answer("✅ Settings updated! (no)")
+                await state.clear()
+            else:
+                await message.answer(
+                    "Please reply with 'name' to change your name or 'done' to finish."
+                )
+        else:
+            return False
+        return True
+
+    async def handle_chat_message(self, message: Message, state: FSMContext):
+        """Handle chat messages with the AI agent"""
+        if await self.handle_current_state(message, state):
+            return
+
+        user_id: int = message.from_user.id
+
         try:
-            # Auto-register user if not exists
-            user = create_user_from_telegram(message.from_user)
-            await self.db.add_user(user)
+            # Check for active session
+            user: User = await self.db.get_user(user_id)
+            if not user or not user.current_session_id:
+                await message.answer(
+                    "You don't have an active chat session. "
+                    "Use /chat to start a new conversation or /help for more commands."
+                )
+                return
 
-            # Check current FSM state
-            current_state = await state.get_state()
-
-            # Log message activity
+            # Log user activity
             await self.db.log_activity(
-                message.from_user.id,
-                BotConstants.ACTIVITY_MESSAGE,
-                {
-                    "text_length": len(message.text) if message.text else 0,
-                    "chat_type": message.chat.type,
-                    "has_entities": bool(message.entities),
-                    "fsm_state": current_state,
-                },
+                user_id=user_id,
+                activity_type=BotConstants.ACTIVITY_MESSAGE,
+                activity_data={"message_length": len(message.text or "")},
+                session_id=user.current_session_id,
             )
 
-            # Handle based on current FSM state
-            if current_state == UserStates.in_settings.state:
-                if message.text.lower() == "name":
-                    await message.answer("👤 Please enter your new name:")
-                    await state.set_state(UserStates.waiting_for_name)
-                elif message.text.lower() == "done":
-                    await message.answer("✅ Settings updated!")
-                    await state.clear()
-                else:
-                    await message.answer(
-                        "Please reply with 'name' to change your name or 'done' to finish."
-                    )
-            else:
-                # Regular message processing
-                await message.answer("📝 I received your message!")
+            session_manager: ChatSessionManager = ChatSessionManager(
+                session_id=user.current_session_id
+            )
 
-        except DatabaseError as e:
-            self.logger.error(f"Database error in message handler: {e}")
-            await message.answer("📝 I received your message!")
+            agent: ChatAgent = ChatAgent(
+                project_dir="~/business-web",
+                collection_name="business_web",
+                session_manager=session_manager,
+            )
+
+            # Send typing action
+            await message.bot.send_chat_action(chat_id=user_id, action="typing")
+
+            # Process the message and get response
+            response: str = agent.run(message.text)
+
+            await self.db.update_chat_session_activity(
+                user.current_session_id, len(agent.messages)
+            )
+
+            # Send the response
+            await message.answer(response, parse_mode=None)
+
+        except Exception as e:
+            self.logger.error(f"Error handling chat message: {e}", exc_info=True)
+            await message.answer(
+                "Sorry, I encountered an error processing your message. Please try again later."
+            )
 
     # ==================== CALLBACK HANDLERS ====================
 

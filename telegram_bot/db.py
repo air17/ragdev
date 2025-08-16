@@ -1079,6 +1079,18 @@ class AsyncUserDatabase:
             self.logger.error(f"Error fetching current session for user {user_id}: {e}")
             return None
 
+    async def update_chat_session_activity(self, session_id: str, message_count: int):
+        """Update chat session last activity and message count"""
+        try:
+            async with self.get_connection() as conn:
+                await conn.execute(
+                    "UPDATE chat_sessions SET last_activity = ?, message_count = ? WHERE session_id = ?",
+                    (datetime.now().isoformat(), message_count, session_id),
+                )
+                await conn.commit()
+        except Exception as e:
+            self.logger.error(f"Error updating chat session activity: {e}")
+
 
 # Helper functions for aiogram integration
 def create_user_from_telegram(telegram_user) -> User:

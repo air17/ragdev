@@ -33,7 +33,9 @@ ADMIN_HELP = (
     "/activate - Activate user\n"
     "/promote - Promote user"
     "/settings - Your settings\n"
-    "/help - This help message"
+    "/help - This help message\n"
+    "/chat <name(optional)> - Start a new chat session or join an existing one\n"
+    "/my_chats - List all the chat sessions\n"
 )
 USER_HELP = (
     "📚 User Help:\n"
@@ -66,7 +68,7 @@ STATISTICS_ERROR = "❌ Unable to retrieve statistics at the moment."
 
 ADMIN_PRIVILEGES_ERROR = "❌ Access denied. Admin privileges required."
 ADMIN_PANEL_MESSAGE = (
-    "🛡️ **Admin Panel**\n"
+    "🛡️ Admin Panel\n"
     "👑 Superadmins: {superadmins}\n"
     "👤 Users: {users}\n"
     "\n"
