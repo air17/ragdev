@@ -8,5 +8,6 @@ numpy
 openai
 pymilvus
 pytest
+pytest-asyncio
 python-dotenv
 ripgrepy
