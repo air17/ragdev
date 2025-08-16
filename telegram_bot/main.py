@@ -1,5 +1,4 @@
 import asyncio
-import uuid
 import logging
 from datetime import datetime
 
@@ -112,14 +111,10 @@ class BotEventHandler:
         /start command - First user interaction
         """
         user = create_user_from_telegram(message.from_user)
-        session_id = str(uuid.uuid4())
 
         try:
             # Register user if new (will ignore if exists)
             await self.db.add_user(user)
-
-            # Start user session
-            await self.db.start_user_session(message.from_user.id, session_id)
 
             # Log the command activity
             await self.db.log_activity(
@@ -132,7 +127,6 @@ class BotEventHandler:
                     else None,
                     "chat_type": message.chat.type,
                 },
-                session_id,
             )
 
             await message.answer(

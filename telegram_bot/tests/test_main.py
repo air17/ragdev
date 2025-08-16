@@ -42,7 +42,6 @@ def mock_db():
         settings={},
     )
     db.log_activity.return_value = True
-    db.start_user_session.return_value = True
     db.update_user.return_value = True
     db.is_admin_or_higher.return_value = False
     db.is_superadmin.return_value = False
@@ -123,7 +122,6 @@ class TestCommandHandlers:
             await bot_handler.handle_start_command(mock_message, mock_fsm_context)
 
             bot_handler.db.add_user.assert_called_once()
-            bot_handler.db.start_user_session.assert_called_once()
             bot_handler.db.log_activity.assert_called_once()
             mock_message.answer.assert_called_once()
 

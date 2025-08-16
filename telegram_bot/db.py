@@ -54,11 +54,26 @@ class User:
     user_role: str = "user"
     settings: Optional[Dict[str, Any]] = field(default_factory=dict)
 
+    # Chat session
+    current_session_id: str | None = None
+
     # Analytics fields
     total_messages: int = 0
     total_commands: int = 0
     first_interaction: Optional[datetime] = None
     last_interaction: Optional[datetime] = None
+
+
+@dataclass
+class ChatSession:
+    session_id: str
+    user_id: int
+    name: str
+    created_at: datetime
+    last_activity: datetime | None = None
+    ended_at: datetime | None = None
+    deleted_at: datetime | None = None
+    message_count: int = 0
 
 
 @dataclass
@@ -73,20 +88,6 @@ class UserActivity:
     session_id: Optional[str] = None
 
 
-@dataclass
-class UserSession:
-    """User session tracking model"""
-
-    user_id: int
-    session_id: str
-    started_at: datetime
-    last_activity: datetime
-    ended_at: Optional[datetime] = None
-    message_count: int = 0
-    command_count: int = 0
-    session_data: Optional[Dict[str, Any]] = field(default_factory=dict)
-
-
 class DatabaseError(Exception):
     """Custom exception for database operations"""
 
@@ -96,7 +97,7 @@ class DatabaseError(Exception):
 class MigrationManager:
     """Database migration management system"""
 
-    CURRENT_VERSION = 1
+    CURRENT_VERSION = 2
 
     @staticmethod
     async def get_db_version(db_path: str) -> int:
@@ -170,22 +171,6 @@ class MigrationManager:
             )
         """)
 
-        # User sessions table
-        await conn.execute("""
-            CREATE TABLE IF NOT EXISTS user_sessions (
-                user_id INTEGER,
-                session_id TEXT,
-                started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                ended_at TIMESTAMP,
-                message_count INTEGER DEFAULT 0,
-                command_count INTEGER DEFAULT 0,
-                session_data TEXT DEFAULT '{}',
-                PRIMARY KEY (user_id, session_id),
-                FOREIGN KEY (user_id) REFERENCES users (user_id) ON DELETE CASCADE
-            )
-        """)
-
         # Create indexes for performance
         await conn.execute("CREATE INDEX IF NOT EXISTS idx_username ON users(username)")
         await conn.execute(
@@ -215,18 +200,53 @@ class MigrationManager:
             "CREATE INDEX IF NOT EXISTS idx_activity_session ON user_activities(session_id)"
         )
 
-        # Session indexes
-        await conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_session_started ON user_sessions(started_at)"
-        )
-        await conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_session_ended ON user_sessions(ended_at)"
-        )
-
         # Record migration
         await conn.execute(
             "INSERT INTO schema_migrations (version, description) VALUES (?, ?)",
-            (1, "Initial schema with analytics"),
+            (1, "Initial schema with users and analytics"),
+        )
+
+    @staticmethod
+    async def apply_migration_v2(conn: aiosqlite.Connection):
+        """Apply version 2 migration - add session table"""
+        _chat_sessions_table_sql = """
+                CREATE TABLE IF NOT EXISTS chat_sessions (
+                    session_id TEXT PRIMARY KEY,
+                    user_id INTEGER NOT NULL,
+                    name TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    last_activity TIMESTAMP,
+                    deleted_at TIMESTAMP,                 -- soft-delete marker (NULL = active)
+                    message_count INTEGER DEFAULT 0,
+                    FOREIGN KEY (user_id) REFERENCES users (user_id) ON DELETE CASCADE
+                );
+                """
+
+        _chat_sessions_indexes_sql = [
+            "CREATE INDEX IF NOT EXISTS idx_chat_sessions_user_id ON chat_sessions(user_id);",
+            "CREATE INDEX IF NOT EXISTS idx_chat_sessions_created_at ON chat_sessions(created_at);",
+            "CREATE INDEX IF NOT EXISTS idx_chat_sessions_last_activity ON chat_sessions(last_activity);",
+            "CREATE INDEX IF NOT EXISTS idx_chat_sessions_deleted_at ON chat_sessions(deleted_at);",
+        ]
+
+        # Add current_session_id to users table safely (run inside a migration - catch/ignore error if column exists)
+        _add_current_session_column_sql = (
+            "ALTER TABLE users ADD COLUMN current_session_id TEXT;"
+        )
+
+        await conn.execute(_chat_sessions_table_sql)
+        for idx_sql in _chat_sessions_indexes_sql:
+            await conn.execute(idx_sql)
+        try:
+            await conn.execute(_add_current_session_column_sql)
+        except aiosqlite.Error:
+            # Column already exists on a previously migrated DB — ignore
+            pass
+
+        # Then record migration as normal:
+        await conn.execute(
+            "INSERT INTO schema_migrations (version, description) VALUES (?, ?)",
+            (2, "Add chat_sessions"),
         )
 
 
@@ -265,6 +285,8 @@ class AsyncUserDatabase:
 
             if current_version < 1 <= target_version:
                 await MigrationManager.apply_migration_v1(conn)
+            if current_version < 2 <= target_version:
+                await MigrationManager.apply_migration_v2(conn)
 
             await conn.commit()
 
@@ -718,54 +740,6 @@ class AsyncUserDatabase:
             self.logger.error(f"Error getting command stats: {e}")
             return {}
 
-    # Session Management
-
-    async def start_user_session(self, user_id: int, session_id: str) -> bool:
-        """Start a new user session"""
-        try:
-            async with self.get_connection() as conn:
-                await conn.execute(
-                    """
-                    INSERT OR REPLACE INTO user_sessions
-                    (user_id, session_id, started_at, last_activity, session_data)
-                    VALUES (?, ?, ?, ?, ?)
-                """,
-                    (
-                        user_id,
-                        session_id,
-                        datetime.now().isoformat(),
-                        datetime.now().isoformat(),
-                        "{}",
-                    ),
-                )
-
-                await conn.commit()
-                return True
-
-        except Exception as e:
-            self.logger.error(f"Error starting session for user {user_id}: {e}")
-            return False
-
-    async def end_user_session(self, user_id: int, session_id: str) -> bool:
-        """End a user session"""
-        try:
-            async with self.get_connection() as conn:
-                await conn.execute(
-                    """
-                    UPDATE user_sessions
-                    SET ended_at = ?
-                    WHERE user_id = ? AND session_id = ?
-                """,
-                    (datetime.now().isoformat(), user_id, session_id),
-                )
-
-                await conn.commit()
-                return True
-
-        except Exception as e:
-            self.logger.error(f"Error ending session for user {user_id}: {e}")
-            return False
-
     # Utility Methods
 
     @staticmethod
@@ -793,6 +767,32 @@ class AsyncUserDatabase:
                 row_dict["settings"] = {}
 
         return User(**row_dict)
+
+    @staticmethod
+    def _row_to_chat_session(row_dict: dict[str, Any]) -> ChatSession:
+        """
+        Convert DB row dict to ChatSession dataclass. Safe-parse timestamps and JSON.
+        """
+        # Parse datetimes
+        for f in ("created_at", "last_activity", "ended_at", "deleted_at"):
+            if row_dict.get(f):
+                try:
+                    row_dict[f] = datetime.fromisoformat(row_dict[f])
+                except (ValueError, TypeError):
+                    row_dict[f] = None
+            else:
+                row_dict[f] = None
+
+        return ChatSession(
+            session_id=row_dict["session_id"],
+            user_id=int(row_dict["user_id"]),
+            name=row_dict.get("name") or "",
+            created_at=row_dict["created_at"] or datetime.now(),
+            last_activity=row_dict.get("last_activity"),
+            ended_at=row_dict.get("ended_at"),
+            deleted_at=row_dict.get("deleted_at"),
+            message_count=int(row_dict.get("message_count") or 0),
+        )
 
     async def get_user_count(self, active_only: bool = True) -> int:
         """Get total number of users"""
@@ -926,6 +926,158 @@ class AsyncUserDatabase:
         except Exception as e:
             self.logger.error(f"Error deactivating user {target_user_id}: {e}")
             raise DatabaseError(f"Failed to deactivate user: {e}")
+
+    # Session methods
+    async def create_chat_session(
+        self, user_id: int, session_id: str, name: str | None = None
+    ) -> str:
+        """
+        Create a new chat session owned by user_id and set it as user's current_session_id.
+        name defaults to human-readable EU date/time: "DD.MM.YYYY HH:MM"
+        Returns the new session_id.
+        """
+        if not name:
+            name = datetime.now().strftime("%d.%m.%Y %H:%M")
+        now_iso = datetime.now().isoformat()
+
+        try:
+            async with self.get_connection() as conn:
+                await conn.execute(
+                    """
+                    INSERT INTO chat_sessions
+                    (session_id, user_id, name, created_at, last_activity)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (session_id, user_id, name, now_iso, now_iso),
+                )
+
+                # Set session as current for the user
+                await conn.execute(
+                    "UPDATE users SET current_session_id = ?, updated_at = ? WHERE user_id = ?",
+                    (session_id, now_iso, user_id),
+                )
+
+                await conn.commit()
+                self.logger.info(
+                    f"Created chat session {session_id} for user {user_id}"
+                )
+                return session_id
+
+        except Exception as e:
+            self.logger.error(f"Error creating chat session for user {user_id}: {e}")
+            raise DatabaseError(f"Failed to create chat session: {e}")
+
+    async def list_chat_sessions(
+        self, user_id: int, include_deleted: bool = False
+    ) -> list[ChatSession]:
+        """List sessions owned by a user."""
+        try:
+            async with self.get_connection() as conn:
+                if include_deleted:
+                    query = "SELECT * FROM chat_sessions WHERE user_id = ? ORDER BY created_at DESC"
+                    params = (user_id,)
+                else:
+                    query = "SELECT * FROM chat_sessions WHERE user_id = ? AND deleted_at IS NULL ORDER BY created_at DESC"
+                    params = (user_id,)
+
+                async with conn.execute(query, params) as cursor:
+                    rows = await cursor.fetchall()
+                    return [self._row_to_chat_session(dict(row)) for row in rows]
+
+        except Exception as e:
+            self.logger.error(f"Error listing chat sessions for user {user_id}: {e}")
+            raise DatabaseError(f"Failed to list chat sessions: {e}")
+
+    async def soft_delete_chat_session(self, user_id: int, session_id: str) -> bool:
+        """
+        Soft-delete a chat session by setting deleted_at = now().
+        Only the owner (user_id) can soft-delete their session.
+        If the deleted session was the user's current_session_id it will be cleared.
+        """
+        try:
+            async with self.get_connection() as conn:
+                await conn.execute("BEGIN IMMEDIATE")
+                try:
+                    now_iso = datetime.now().isoformat()
+                    cursor = await conn.execute(
+                        "UPDATE chat_sessions SET deleted_at = ? WHERE session_id = ? AND user_id = ? AND deleted_at IS NULL",
+                        (now_iso, session_id, user_id),
+                    )
+                    rows_affected = cursor.rowcount
+
+                    # Clear current_session_id if needed
+                    async with conn.execute(
+                        "SELECT current_session_id FROM users WHERE user_id = ?",
+                        (user_id,),
+                    ) as cur:
+                        row = await cur.fetchone()
+                        if row and row[0] == session_id:
+                            await conn.execute(
+                                "UPDATE users SET current_session_id = NULL, updated_at = ? WHERE user_id = ?",
+                                (now_iso, user_id),
+                            )
+
+                    await conn.commit()
+                    if rows_affected > 0:
+                        self.logger.info(
+                            f"Soft-deleted chat session {session_id} for user {user_id}"
+                        )
+                        return True
+                    return False
+
+                except Exception:
+                    await conn.rollback()
+                    raise
+
+        except Exception as e:
+            self.logger.error(
+                f"Error soft-deleting chat session {session_id} for user {user_id}: {e}"
+            )
+            return False
+
+    async def restore_chat_session(self, user_id: int, session_id: str) -> bool:
+        """
+        Restore a previously soft-deleted chat session (set deleted_at = NULL).
+        Only owner may restore.
+        """
+        try:
+            async with self.get_connection() as conn:
+                cursor = await conn.execute(
+                    "UPDATE chat_sessions SET deleted_at = NULL WHERE session_id = ? AND user_id = ? AND deleted_at IS NOT NULL",
+                    (session_id, user_id),
+                )
+                await conn.commit()
+                return cursor.rowcount > 0
+        except Exception as e:
+            self.logger.error(
+                f"Error restoring chat session {session_id} for user {user_id}: {e}"
+            )
+            return False
+
+    async def get_current_chat_session(self, user_id: int) -> ChatSession | None:
+        """
+        Return the current chat session for a user in a single query, only if it's not soft-deleted.
+        """
+        try:
+            async with self.get_connection() as conn:
+                async with conn.execute(
+                    """
+                        SELECT cs.*
+                        FROM users u
+                        JOIN chat_sessions cs ON u.current_session_id = cs.session_id
+                        WHERE u.user_id = ? AND cs.deleted_at IS NULL
+                        LIMIT 1
+                        """,
+                    (user_id,),
+                ) as cursor:
+                    row = await cursor.fetchone()
+                    if not row:
+                        return None
+                    return self._row_to_chat_session(dict(row))
+
+        except Exception as e:
+            self.logger.error(f"Error fetching current session for user {user_id}: {e}")
+            return None
 
 
 # Helper functions for aiogram integration

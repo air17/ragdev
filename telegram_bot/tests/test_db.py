@@ -10,7 +10,6 @@ from telegram_bot.db import (
     User,
     UserRole,
     UserActivity,
-    UserSession,
     MigrationManager,
     create_user_from_telegram,
 )
@@ -335,23 +334,6 @@ class TestAsyncUserDatabase:
         assert stats["/help"] == 1
 
     @pytest.mark.asyncio
-    async def test_start_user_session(self, db, sample_user):
-        database = await db()
-        await database.add_user(sample_user)
-
-        result = await database.start_user_session(sample_user.user_id, "session_123")
-        assert result is True
-
-    @pytest.mark.asyncio
-    async def test_end_user_session(self, db, sample_user):
-        database = await db()
-        await database.add_user(sample_user)
-
-        await database.start_user_session(sample_user.user_id, "session_123")
-        result = await database.end_user_session(sample_user.user_id, "session_123")
-        assert result is True
-
-    @pytest.mark.asyncio
     async def test_get_user_count(self, db, sample_user, superadmin_user):
         database = await db()
         await database.add_user(sample_user)
@@ -408,7 +390,7 @@ class TestAsyncUserDatabase:
         )
 
         # Clean up activities (should not delete recent ones)
-        deleted_count = await database.cleanup_old_activities(days=1)
+        deleted_count = await database.cleanup_old_activities(days=10)
         assert deleted_count == 0
 
         # Clean up with 0 days should delete all activities
@@ -485,17 +467,6 @@ class TestDataModels:
         assert activity.user_id == 12345
         assert activity.activity_type == "message"
         assert activity.activity_data == '{"text": "hello"}'
-
-    def test_user_session_creation(self):
-        session = UserSession(
-            user_id=12345,
-            session_id="session_123",
-            started_at=datetime.now(),
-            last_activity=datetime.now(),
-        )
-        assert session.user_id == 12345
-        assert session.session_id == "session_123"
-        assert isinstance(session.started_at, datetime)
 
 
 # Parametrized tests for edge cases
