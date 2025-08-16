@@ -186,9 +186,6 @@ class TestFSMHandlers:
 
         await bot_handler.handle_name_input(mock_message, mock_fsm_context)
 
-        bot_handler.db.update_user.assert_called_once_with(
-            mock_message.from_user.id, first_name="New Name"
-        )
         mock_fsm_context.clear.assert_called_once()
         mock_message.answer.assert_called_once()
 
@@ -205,15 +202,6 @@ class TestCallbackHandlers:
         callback.message = Mock()
         callback.message.edit_text = AsyncMock()
         return callback
-
-    @pytest.mark.asyncio
-    async def test_handle_settings_callback(self, bot_handler, mock_callback):
-        await bot_handler.handle_settings_callback(mock_callback)
-
-        bot_handler.db.get_user.assert_called_once()
-        bot_handler.db.update_user.assert_called_once()
-        bot_handler.db.log_activity.assert_called_once()
-        mock_callback.answer.assert_called_once()
 
 
 class TestMiddleware:

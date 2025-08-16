@@ -3,7 +3,7 @@ import uuid
 import logging
 from datetime import datetime
 
-from aiogram import Bot, Dispatcher, Router, F, BaseMiddleware
+from aiogram import Bot, Dispatcher, Router, BaseMiddleware
 from aiogram.types import Message, CallbackQuery, TelegramObject
 from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
@@ -33,16 +33,10 @@ class BotConstants:
     ACTIVITY_MESSAGE = "message"
     ACTIVITY_CALLBACK = "callback"
     ACTIVITY_ADMIN_ACTION = "admin_action"
-    ACTIVITY_PROFILE_UPDATE = "profile_update"
-    ACTIVITY_INLINE_QUERY = "inline_query"
-    ACTIVITY_CHAT_MEMBER_UPDATE = "chat_member_update"
-    ACTIVITY_JOIN_REQUEST = "join_request"
-    ACTIVITY_WEBHOOK_RECEIVED = "webhook_received"
 
     # Default values
     DEFAULT_ANALYTICS_DAYS = 30
     DEFAULT_CLEANUP_DAYS = 90
-    DEFAULT_MESSAGE_TRUNCATE_LENGTH = 100
 
 
 # Example FSM states
@@ -81,12 +75,6 @@ class BotEventHandler:
         self.router.message.register(self.handle_any_message)
 
         # Callback query handlers
-        self.router.callback_query.register(
-            self.handle_settings_callback, F.data.startswith("settings_")
-        )
-        self.router.callback_query.register(
-            self.handle_admin_callback, F.data.startswith("admin_")
-        )
         self.router.callback_query.register(self.handle_any_callback)
 
     # ==================== HELPER METHODS ====================
@@ -490,33 +478,9 @@ Reply with 'done' to finish"""
         """
         Handle name input in FSM
         """
-        try:
-            new_name = message.text.strip()
-
-            # Update user's first name
-            success = await self.db.update_user(
-                message.from_user.id, first_name=new_name
-            )
-
-            # Log the update
-            await self.db.log_activity(
-                message.from_user.id,
-                BotConstants.ACTIVITY_PROFILE_UPDATE,
-                {"field": "first_name", "new_value": new_name, "success": success},
-            )
-
-            # Clear state
-            await state.clear()
-
-            if success:
-                await message.answer(f"✅ Name updated to: {new_name}")
-            else:
-                await message.answer("❌ Failed to update name")
-
-        except DatabaseError as e:
-            self.logger.error(f"Database error in name input: {e}")
-            await message.answer("❌ Failed to update name")
-            await state.clear()
+        # Clear state
+        await state.clear()
+        await message.answer("❌ You can't change your name!")
 
     # ==================== MESSAGE HANDLERS ====================
 
@@ -566,64 +530,6 @@ Reply with 'done' to finish"""
 
     # ==================== CALLBACK HANDLERS ====================
 
-    async def handle_settings_callback(self, callback: CallbackQuery):
-        """
-        Handle settings-related callbacks
-        """
-        try:
-            action = callback.data.replace("settings_", "")
-
-            # Log callback activity
-            await self.db.log_activity(
-                callback.from_user.id,
-                BotConstants.ACTIVITY_CALLBACK,
-                {"callback_data": callback.data, "action": action},
-            )
-
-            if action == "notifications_on":
-                user = await self.db.get_user(callback.from_user.id)
-                settings = user.settings or {} if user else {}
-                settings["notifications"] = True
-
-                await self.db.update_user(callback.from_user.id, settings=settings)
-                await callback.answer("🔔 Notifications enabled!")
-
-            elif action == "notifications_off":
-                user = await self.db.get_user(callback.from_user.id)
-                settings = user.settings or {} if user else {}
-                settings["notifications"] = False
-
-                await self.db.update_user(callback.from_user.id, settings=settings)
-                await callback.answer("🔕 Notifications disabled!")
-
-            await callback.message.edit_text("⚙️ Settings updated!")
-
-        except DatabaseError as e:
-            self.logger.error(f"Database error in settings callback: {e}")
-            await callback.answer("❌ Unable to update settings")
-
-    async def handle_admin_callback(self, callback: CallbackQuery):
-        """Handle admin panel callbacks"""
-        try:
-            if not await self.db.is_admin_or_higher(callback.from_user.id):
-                await callback.answer("❌ Access denied", show_alert=True)
-                return
-
-            action = callback.data.replace("admin_", "")
-
-            # Log admin callback
-            await self.db.log_activity(
-                callback.from_user.id,
-                BotConstants.ACTIVITY_ADMIN_ACTION,
-                {"action": f"callback_{action}", "callback_data": callback.data},
-            )
-
-            await callback.answer(f"Admin action: {action}")
-
-        except DatabaseError as e:
-            self.logger.error(f"Database error in admin callback: {e}")
-            await callback.answer("❌ Error processing admin action")
-
     async def handle_any_callback(self, callback: CallbackQuery):
         """Handle any other callback"""
         try:
@@ -633,7 +539,7 @@ Reply with 'done' to finish"""
                 {"callback_data": callback.data},
             )
 
-            await callback.answer("Button clicked!")
+            await callback.answer("Don't click buttons!")
 
         except DatabaseError as e:
             self.logger.error(f"Database error in callback handler: {e}")
@@ -779,7 +685,9 @@ async def setup_production_bot():
     # Setup graceful shutdown
     async def on_shutdown():
         print("🛑 Shutting down bot...")
-        await db.cleanup_old_activities(days=90)  # Final cleanup
+        await db.cleanup_old_activities(
+            days=BotConstants.DEFAULT_CLEANUP_DAYS
+        )  # Final cleanup
 
     # Register shutdown handler
     dp.shutdown.register(on_shutdown)
