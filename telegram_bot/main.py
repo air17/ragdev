@@ -10,32 +10,9 @@ from aiogram.fsm.state import State, StatesGroup
 from typing import Callable, Any, Awaitable
 
 import config
+from telegram_bot import const
+from telegram_bot.const import BotConstants
 from telegram_bot.db import create_user_from_telegram, AsyncUserDatabase, DatabaseError
-
-
-# Constants
-class BotConstants:
-    """Constants for bot operations"""
-
-    # User roles
-    ROLE_USER = "user"
-    ROLE_SUPERADMIN = "superadmin"
-
-    VALID_ROLES = [ROLE_USER, ROLE_SUPERADMIN]
-
-    # User states (since FSM states are separate from DB user states)
-    USER_STATE_SETTINGS = "in_settings"
-    USER_STATE_WAITING_NAME = "waiting_for_name"
-
-    # Activity types
-    ACTIVITY_COMMAND = "command"
-    ACTIVITY_MESSAGE = "message"
-    ACTIVITY_CALLBACK = "callback"
-    ACTIVITY_ADMIN_ACTION = "admin_action"
-
-    # Default values
-    DEFAULT_ANALYTICS_DAYS = 30
-    DEFAULT_CLEANUP_DAYS = 90
 
 
 # Example FSM states
@@ -130,14 +107,12 @@ class BotEventHandler:
             )
 
             await message.answer(
-                f"👋 Welcome {message.from_user.first_name}! I'm your bot assistant."
+                const.WELCOME_MESSAGE.format(first_name=message.from_user.first_name)
             )
 
         except DatabaseError as e:
             self.logger.error(f"Database error in start command: {e}")
-            await message.answer(
-                "⚠️ Welcome! There was a minor issue with registration, but you can continue using the bot."
-            )
+            await message.answer(const.REGISTRATION_ISSUE_MESSAGE)
 
     async def handle_help_command(self, message: Message):
         """
@@ -154,31 +129,17 @@ class BotEventHandler:
                 {"command": "/help"},
             )
 
-            if user and user.user_role in (BotConstants.ROLE_SUPERADMIN,):
-                help_text = (
-                    "🔧 Admin Help:\n"
-                    "/stats - Bot statistics\n"
-                    "/admin - Admin panel\n"
-                    "/ban - Ban user\n"
-                    "/activate - Activate user\n"
-                    "/promote - Promote user"
-                    "/settings - Your settings\n"
-                    "/help - This help message"
-                )
-            else:
-                help_text = (
-                    "📚 User Help:\n"
-                    "/settings - Your settings\n"
-                    "/help - This help message"
-                )
+            help_text = (
+                const.ADMIN_HELP
+                if user and user.user_role in (BotConstants.ROLE_SUPERADMIN,)
+                else const.USER_HELP
+            )
 
             await message.answer(help_text)
 
         except DatabaseError as e:
             self.logger.error(f"Database error in help command: {e}")
-            await message.answer(
-                "📚 Basic Help:\n/settings - Your settings\n/help - This help message"
-            )
+            await message.answer(const.HELP_ERROR)
 
     async def handle_stats_command(self, message: Message):
         """
@@ -197,25 +158,37 @@ class BotEventHandler:
                     days=BotConstants.DEFAULT_ANALYTICS_DAYS
                 )
 
-                stats_text = f"""📊 Bot Statistics ({BotConstants.DEFAULT_ANALYTICS_DAYS} days)
-👥 Total Active Users: {analytics["total_active_users"]}
-🆕 New Users: {analytics["new_users_period"]}
-🔥 Active in Period: {analytics["active_users_period"]}
-
-📈 Activity Breakdown:
-{chr(10).join([f"• {k}: {v}" for k, v in analytics["activity_breakdown"].items()])}
-
-🎯 Top Commands:
-{chr(10).join([f"• {k}: {v}" for k, v in list(command_stats.items())[:5]])}"""
+                stats_text = const.STATISTICS_MESSAGE.format(
+                    analytics_days=BotConstants.DEFAULT_ANALYTICS_DAYS,
+                    total_active_users=analytics["total_active_users"],
+                    new_users_period=analytics["new_users_period"],
+                    active_users_period=analytics["active_users_period"],
+                    activity_breakdown=chr(10).join(
+                        [
+                            f"• {key}: {value}"
+                            for key, value in analytics["activity_breakdown"].items()
+                        ]
+                    ),
+                    top_commands=chr(10).join(
+                        [
+                            f"• {key}: {value}"
+                            for key, value in list(command_stats.items())[:5]
+                        ]
+                    ),
+                )
             else:
                 # Get user-specific stats
                 user_stats = await self.db.get_user_activity_stats(
                     message.from_user.id, days=BotConstants.DEFAULT_ANALYTICS_DAYS
                 )
-                stats_text = f"""📊 Your Statistics ({BotConstants.DEFAULT_ANALYTICS_DAYS} days)
-💬 Messages: {user_stats["total_messages"]}
-⚡ Commands: {user_stats["total_commands"]}
-📅 Member Since: {user_stats["first_interaction"][:10] if user_stats["first_interaction"] else "Unknown"}"""
+                stats_text = const.USER_STATS_MESSAGE.format(
+                    analytics_days=BotConstants.DEFAULT_ANALYTICS_DAYS,
+                    total_messages=user_stats["total_messages"],
+                    total_commands=user_stats["total_commands"],
+                    first_interaction=user_stats["first_interaction"][:10]
+                    if user_stats["first_interaction"]
+                    else "Unknown",
+                )
 
             # Log command usage
             await self.db.log_activity(
@@ -228,7 +201,7 @@ class BotEventHandler:
 
         except DatabaseError as e:
             self.logger.error(f"Database error in stats command: {e}")
-            await message.answer("❌ Unable to retrieve statistics at the moment.")
+            await message.answer(const.STATISTICS_ERROR)
 
     async def handle_admin_command(self, message: Message):
         """
@@ -237,7 +210,7 @@ class BotEventHandler:
         try:
             # Check admin permissions
             if not await self.db.is_admin_or_higher(message.from_user.id):
-                await message.answer("❌ Access denied. Admin privileges required.")
+                await message.answer(const.ADMIN_PRIVILEGES_ERROR)
                 return
 
             # Get user counts by role
@@ -251,19 +224,16 @@ class BotEventHandler:
                 {"action": "panel_access", "command": "/admin"},
             )
 
-            admin_text = f"""🛡️ **Admin Panel**
-👑 Superadmins: {len(superadmins)}
-👤 Users: {len(users)}
-
-Use /ban <user_id> to ban users
-Use /activate <user_id> to activate users
-Use /promote <user_id> <role> to promote users"""
+            admin_text = const.ADMIN_PANEL_MESSAGE.format(
+                superadmins=len(superadmins),
+                users=len(users),
+            )
 
             await message.answer(admin_text, parse_mode="Markdown")
 
         except DatabaseError as e:
             self.logger.error(f"Database error in admin command: {e}")
-            await message.answer("❌ Unable to access admin panel at the moment.")
+            await message.answer(const.ADMIN_ERROR)
 
     async def handle_ban_command(self, message: Message):
         """
@@ -272,7 +242,7 @@ Use /promote <user_id> <role> to promote users"""
         try:
             # Check admin permissions
             if not await self.db.is_admin_or_higher(message.from_user.id):
-                await message.answer("❌ Access denied.")
+                await message.answer(const.ADMIN_PRIVILEGES_ERROR)
                 return
 
             # Parse command arguments
@@ -451,20 +421,19 @@ Use /promote <user_id> <role> to promote users"""
                 {"command": "/settings"},
             )
 
-            settings_text = f"""⚙️ **Your Settings**
-👤 Name: {user.first_name} {user.last_name or ""}
-🌐 Language: {user.language_code or "Not set"}
-🎭 Role: {user.user_role}
-📊 Total Messages: {user.total_messages}
-
-Reply with 'name' to change your name
-Reply with 'done' to finish"""
+            settings_text = const.SETTINGS_MESSAGE.format(
+                first_name=user.first_name,
+                last_name=user.last_name or "",
+                language=user.language_code or "Not set",
+                role=user.user_role,
+                total_messages=user.total_messages,
+            )
 
             await message.answer(settings_text, parse_mode="Markdown")
 
         except DatabaseError as e:
             self.logger.error(f"Database error in settings command: {e}")
-            await message.answer("❌ Unable to load settings at the moment.")
+            await message.answer(const.SETTINGS_ERROR)
 
     # ==================== FSM STATE HANDLERS ====================
 
