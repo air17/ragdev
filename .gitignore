@@ -77,3 +77,4 @@ cython_debug/
 .idea/
 usages_index.json
 /.indexer_state*
+*.db

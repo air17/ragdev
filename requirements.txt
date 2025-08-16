@@ -1,3 +1,4 @@
+aiosqlite
 GitPython
 google-genai
 langchain
