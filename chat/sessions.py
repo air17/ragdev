@@ -16,7 +16,7 @@ def _now() -> str:
     )
 
 
-class ChatSession:
+class ChatSessionManager:
     """Manages chat sessions stored as JSON files on disk."""
 
     def __init__(
@@ -113,9 +113,3 @@ class ChatSession:
             else:
                 raise FileNotFoundError(sid)
         self.active_session = sid
-
-
-if __name__ == "__main__":
-    mgr = ChatSession(sessions_dir="./.sessions_test")
-    mgr.append_messages([{"role": "user", "content": "hi"}])
-    print(mgr.get_messages())

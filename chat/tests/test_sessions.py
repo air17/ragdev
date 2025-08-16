@@ -4,19 +4,19 @@ from pathlib import Path
 
 import pytest
 
-from chat.sessions import ChatSession
+from chat.sessions import ChatSessionManager
 
 
 def test_create_session():
     """Test creating a new session with and without a custom ID."""
     with tempfile.TemporaryDirectory() as temp_dir:
         # Test creating with auto-generated ID
-        session = ChatSession(sessions_dir=temp_dir)
+        session = ChatSessionManager(sessions_dir=temp_dir)
         assert len(os.listdir(temp_dir)) == 1
 
         # Test creating with custom ID
         custom_id = "test-session-123"
-        session = ChatSession(sessions_dir=temp_dir, session_id=custom_id)
+        session = ChatSessionManager(sessions_dir=temp_dir, session_id=custom_id)
         assert (Path(temp_dir) / f"{custom_id}.json").exists()
         assert session.active_session == custom_id
 
@@ -24,7 +24,7 @@ def test_create_session():
 def test_append_and_retrieve_messages():
     """Test appending and retrieving messages from a session."""
     with tempfile.TemporaryDirectory() as temp_dir:
-        session = ChatSession(sessions_dir=temp_dir)
+        session = ChatSessionManager(sessions_dir=temp_dir)
         test_messages = [
             {"role": "user", "content": "Hello"},
             {"role": "assistant", "content": "Hi there!"},
@@ -45,7 +45,7 @@ def test_list_sessions():
     with tempfile.TemporaryDirectory() as temp_dir:
         # Create multiple sessions
         sessions = [
-            ChatSession(sessions_dir=temp_dir, session_id=f"session-{i}")
+            ChatSessionManager(sessions_dir=temp_dir, session_id=f"session-{i}")
             for i in range(3)
         ]
 
@@ -58,7 +58,7 @@ def test_list_sessions():
 def test_load_nonexistent_session():
     """Test loading a non-existent session raises FileNotFoundError."""
     with tempfile.TemporaryDirectory() as temp_dir:
-        session = ChatSession(sessions_dir=temp_dir)
+        session = ChatSessionManager(sessions_dir=temp_dir)
         with pytest.raises(FileNotFoundError):
             session.load_full("non-existent-session")
 
@@ -66,7 +66,7 @@ def test_load_nonexistent_session():
 def test_append_to_nonexistent_session():
     """Test appending to a non-existent session raises FileNotFoundError."""
     with tempfile.TemporaryDirectory() as temp_dir:
-        session = ChatSession(sessions_dir=temp_dir, session_id="test-session")
+        session = ChatSessionManager(sessions_dir=temp_dir, session_id="test-session")
         # Delete the session file to simulate it being missing
         (Path(temp_dir) / "test-session.json").unlink()
 

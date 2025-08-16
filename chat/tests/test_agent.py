@@ -1,6 +1,6 @@
 from unittest.mock import MagicMock, patch
 from chat.agent import ChatAgent
-from chat.sessions import ChatSession
+from chat.sessions import ChatSessionManager
 from config import DEEPSEEK_BASE_URL
 
 
@@ -15,10 +15,10 @@ def test_chat_agent_initialization():
 
 def test_chat_agent_with_session():
     """Test that ChatAgent loads messages from a session if provided."""
-    mock_session = MagicMock(spec=ChatSession)
+    mock_session = MagicMock(spec=ChatSessionManager)
     mock_session.get_messages.return_value = [{"role": "user", "content": "test"}]
 
-    agent = ChatAgent(project_dir="/test/project", session=mock_session)
+    agent = ChatAgent(project_dir="/test/project", session_manager=mock_session)
 
     mock_session.get_messages.assert_called_once()
     assert len(agent.messages) == 1

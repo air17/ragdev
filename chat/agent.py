@@ -22,7 +22,7 @@ from agent_tools.read_file import (
     read_file_with_context,
 )
 from chat.const import SYSTEM_PROMPT
-from chat.sessions import ChatSession
+from chat.sessions import ChatSessionManager
 from config import DEFAULT_COLLECTION_NAME, DEEPSEEK_BASE_URL, DEEPSEEK_API_KEY
 from rag.embeddings import EmbeddingManager
 from rag.reranker import rerank_results
@@ -37,12 +37,12 @@ class ChatAgent:
         api_key: str = DEEPSEEK_API_KEY,
         model: str = "deepseek-reasoner",
         max_iterations: int = 15,
-        session: ChatSession | None = None,
+        session_manager: ChatSessionManager | None = None,
     ) -> None:
         # session is optional; if provided, messages are loaded from it and persisted there
-        self.session: ChatSession | None = session
+        self.session_manager: ChatSessionManager | None = session_manager
         self.messages: list[type[TypedDict]] = (
-            self.session.get_messages() if self.session else []
+            self.session_manager.get_messages() if self.session_manager else []
         )
 
         self.max_iterations: int = max_iterations
@@ -318,8 +318,8 @@ class ChatAgent:
     def _append_message(self, message: type[TypedDict]) -> None:
         """Append message to in-memory history and persist if session provided."""
         self.messages.append(message)
-        if self.session:
-            self.session.append_messages([message])
+        if self.session_manager:
+            self.session_manager.append_messages([message])
 
     def _get_project_prompt(self) -> str:
         try:
