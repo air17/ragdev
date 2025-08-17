@@ -145,7 +145,7 @@ class ChatAgent:
                 type="function",
                 function=FunctionDefinition(
                     name="scroll_up",
-                    description="Read 100 lines above a given line in a file",
+                    description="Read 100 lines before a given line in a file. This is especially useful when the read_file output is missing important context in previous lines.",
                     parameters={
                         "type": "object",
                         "required": ["path", "line_from"],
@@ -166,7 +166,7 @@ class ChatAgent:
                 type="function",
                 function=FunctionDefinition(
                     name="scroll_down",
-                    description="Read 100 lines below a given line in a file",
+                    description="Read the next 100 lines immediately after a given line in a file. This is especially useful to load extra context after a read_file call with last line number as a line_from argument.",
                     parameters={
                         "type": "object",
                         "required": ["path", "line_from"],
@@ -302,10 +302,14 @@ class ChatAgent:
                     path += "/" + args["path"]
                 result = search_codebase(args["query"], self.project_dir)
             elif tool == "read_file":
+                end_line: int | None = args.get("end_line_one_indexed_inclusive")
+                # show additional 10 lines after end_line
+                if end_line:
+                    end_line += 10
                 result = read_file_with_context(
                     self.project_dir + "/" + args["path"],
                     int(args["start_line_one_indexed"]),
-                    args.get("end_line_one_indexed_inclusive"),
+                    end_line,
                 )
             elif tool == "list_dir":
                 result = ls(self.project_dir + "/" + args["path"])

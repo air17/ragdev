@@ -125,6 +125,7 @@ def read_file_with_context(
     start_line: int = 1,
     end_line: int | None = None,
     add_imports: bool = False,
+    summary_max_lines: int = 1000,
 ) -> str:
     """
     Read content from a file with additional context including imports and summaries.
@@ -144,6 +145,7 @@ def read_file_with_context(
         start_line: First line to read (1-based indexing, default: 1).
         end_line: Last line to read (inclusive). If None, reads until end of file.
         add_imports: Whether to add imports at the top of the file.
+        summary_max_lines: Maximum number of lines to summarize before/after the chunk.
 
     Returns:
         String containing imports, optional inlined context or summaries, and the requested content.
@@ -214,6 +216,8 @@ def read_file_with_context(
     before_start = last_import_line + 1
     before_end = start_line - 1
     if before_start <= before_end:
+        if before_end - before_start > summary_max_lines:
+            before_start = before_end - summary_max_lines
         add_lines_summary(before_start, before_end)
         parts.append("...")
 
@@ -225,6 +229,8 @@ def read_file_with_context(
     if end_line < total_lines:
         after_start = end_line + 1
         after_end = total_lines
+        if after_end - after_start > summary_max_lines:
+            after_end = after_start + summary_max_lines
         parts.append("...")
         add_lines_summary(after_start, after_end)
     return "\n".join(parts)
