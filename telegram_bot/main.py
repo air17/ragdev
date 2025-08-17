@@ -486,7 +486,10 @@ class BotEventHandler:
                 )
             else:
                 # Create new session
-                session_id = ChatSessionManager().active_session
+                session_id = ChatSessionManager().create_session(
+                    project_dir=config.DEFAULT_PROJECT_DIR,
+                    collection_name=config.DEFAULT_COLLECTION_NAME,
+                )
                 await self.db.create_chat_session(
                     user_id=message.from_user.id,
                     session_id=session_id,
@@ -617,13 +620,28 @@ class BotEventHandler:
                 session_id=user.current_session_id,
             )
 
-            session_manager: ChatSessionManager = ChatSessionManager(
-                session_id=user.current_session_id
-            )
+            try:
+                session_manager: ChatSessionManager = ChatSessionManager(
+                    session_id=user.current_session_id
+                )
+            except FileNotFoundError:
+                await message.answer(
+                    "Your chat session not found. Please use /chat (name) to create a new session."
+                )
+                await self.db.update_user(user_id=user_id, current_session_id=None)
+                await self.db.soft_delete_chat_session(
+                    user_id=user_id, session_id=user.current_session_id
+                )
+                return
+            if not session_manager.active_session:
+                await message.answer(
+                    "Your don't have an active chat session. Please use /chat (name) to create a new session."
+                )
+                return
 
             agent: ChatAgent = ChatAgent(
-                project_dir="~/business-web",
-                collection_name="business_web",
+                project_dir=session_manager.project_dir,
+                collection_name=session_manager.collection_name,
                 session_manager=session_manager,
             )
 

@@ -24,12 +24,11 @@ class ChatSessionManager:
         self.dir: Path = Path(sessions_dir)
         self.dir.mkdir(parents=True, exist_ok=True)
 
-        # Generate session if none provided
-        if session_id is None:
-            session_id = self.create_session()
-        else:
-            if not self._path(session_id).exists():
-                self.create_session(session_id=session_id)
+        if session_id:
+            # load project_dir and collection_name
+            data: type[TypedDict] = self.load_full(session_id)
+            self.project_dir = data.get("meta", {}).get("project_dir")
+            self.collection_name = data.get("meta", {}).get("collection_name")
 
         self.active_session: str = session_id
 
@@ -47,16 +46,23 @@ class ChatSessionManager:
         self,
         initial: list[type[TypedDict]] | None = None,
         session_id: str | None = None,
+        project_dir: str | None = None,
+        collection_name: str | None = None,
     ) -> str:
         """Create a new chat session with optional initial messages, and return its ID."""
         sid: str = session_id or str(uuid.uuid4())
         meta: dict[str, str | None] = {
             "id": sid,
+            "project_dir": project_dir,
+            "collection_name": collection_name,
             "created_at": _now(),
             "updated_at": _now(),
         }
         payload: type[TypedDict] = {"meta": meta, "messages": initial or []}
         self._write(self._path(sid), payload)
+        self.project_dir = project_dir
+        self.collection_name = collection_name
+        self.active_session = sid
         return sid
 
     def list_sessions(self) -> list[type[TypedDict]]:
@@ -70,6 +76,8 @@ class ChatSessionManager:
                     {
                         "id": meta.get("id", p.stem),
                         "updated_at": meta.get("updated_at"),
+                        "project_dir": meta.get("project_dir"),
+                        "collection_name": meta.get("collection_name"),
                     }
                 )
             except Exception:
@@ -95,12 +103,3 @@ class ChatSessionManager:
         data.setdefault("messages", []).extend(messages)
         data.setdefault("meta", {})["updated_at"] = _now()
         self._write(p, data)
-
-    def switch_session(self, sid: str, create_if_missing: bool = False) -> None:
-        """Switch to another session, optionally creating it if missing."""
-        if not self._path(sid).exists():
-            if create_if_missing:
-                self.create_session(session_id=sid)
-            else:
-                raise FileNotFoundError(sid)
-        self.active_session = sid

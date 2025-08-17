@@ -18,8 +18,9 @@ DEFAULT_DIR_EXCLUSIONS: tuple[str, ...] = (
     "node_modules",  # Node.js dependencies
 )
 # Special case exclusions (directory name and parent directory name pairs)
-DEFAULT_DIR_WITHIN_PARENT_EXCLUSIONS: tuple[tuple[str, str]] = (
+DEFAULT_DIR_WITHIN_PARENT_EXCLUSIONS: tuple[tuple[str, str], ...] = (
     ("jl_main_project", "jetlend_models"),  # Specific to this project
+    ("jl_main_project", "config-containers"),
 )
 DEFAULT_FILE_EXTENSIONS: tuple[str, ...] = (".py",)
 DEFAULT_BATCH_SIZE: int = 100
@@ -33,6 +34,7 @@ def process_directory(
     dir_within_parent_exclusions: tuple[
         tuple[str, str], ...
     ] = DEFAULT_DIR_WITHIN_PARENT_EXCLUSIONS,
+    batch_size: int = DEFAULT_BATCH_SIZE,
 ) -> None:
     """
     Process all files in a directory and its subdirectories, chunk them, and add them to the vector database.
@@ -95,6 +97,7 @@ def process_directory(
                     root=root,
                     filename=filename,
                     indexed_files=indexed_files,
+                    batch_size=batch_size,
                 )
     except KeyboardInterrupt:
         print("\nIndexing interrupted. Progress has been saved.")

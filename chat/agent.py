@@ -23,7 +23,12 @@ from agent_tools.read_file import (
 )
 from chat.const import SYSTEM_PROMPT
 from chat.sessions import ChatSessionManager
-from config import DEFAULT_COLLECTION_NAME, DEEPSEEK_BASE_URL, DEEPSEEK_API_KEY
+from config import (
+    DEFAULT_COLLECTION_NAME,
+    DEEPSEEK_BASE_URL,
+    DEEPSEEK_API_KEY,
+    DEFAULT_PROJECT_DIR,
+)
 from rag.embeddings import EmbeddingManager
 from rag.reranker import rerank_results
 from rag.snippet_reader import read_snippets
@@ -32,7 +37,7 @@ from rag.snippet_reader import read_snippets
 class ChatAgent:
     def __init__(
         self,
-        project_dir: str = ".",
+        project_dir: str = DEFAULT_PROJECT_DIR,
         collection_name: str = DEFAULT_COLLECTION_NAME,
         api_key: str = DEEPSEEK_API_KEY,
         model: str = "deepseek-reasoner",
