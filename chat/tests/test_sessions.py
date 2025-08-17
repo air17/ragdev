@@ -17,7 +17,7 @@ def test_create_session():
         # Test creating with custom ID
         custom_id = "test-session-123"
         session = ChatSessionManager(sessions_dir=temp_dir, session_id=custom_id)
-        assert (Path(temp_dir) / f"{custom_id}.json").exists()
+        assert (Path(temp_dir) / f"{custom_id}.pickle").exists()
         assert session.active_session == custom_id
 
 
@@ -68,7 +68,7 @@ def test_append_to_nonexistent_session():
     with tempfile.TemporaryDirectory() as temp_dir:
         session = ChatSessionManager(sessions_dir=temp_dir, session_id="test-session")
         # Delete the session file to simulate it being missing
-        (Path(temp_dir) / "test-session.json").unlink()
+        (Path(temp_dir) / "test-session.pickle").unlink()
 
         with pytest.raises(FileNotFoundError):
             session.append_messages([{"role": "user", "content": "test"}])

@@ -1,9 +1,8 @@
-import json
-import os
+import pickle
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import TypedDict
+from typing import TypedDict, Any
 
 
 def _now() -> str:
@@ -36,16 +35,13 @@ class ChatSessionManager:
 
     def _path(self, sid: str) -> Path:
         """Return the file path for a given session ID."""
-        return self.dir / f"{sid}.json"
+        return self.dir / f"{sid}.pickle"
 
-    def _write(self, path: Path, data: type[TypedDict]) -> None:
+    @staticmethod
+    def _write(path: Path, data: Any) -> None:
         """Write data to disk atomically."""
-        tmp: Path = path.with_suffix(path.suffix + ".tmp")
-        with tmp.open("w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(tmp, path)
+        with path.open("wb") as f:
+            pickle.dump(data, f)
 
     def create_session(
         self,
@@ -66,10 +62,9 @@ class ChatSessionManager:
     def list_sessions(self) -> list[type[TypedDict]]:
         """Return a list of available sessions with their metadata."""
         sessions: list[type[TypedDict]] = []
-        for p in sorted(self.dir.glob("*.json")):
+        for p in sorted(self.dir.glob("*.pickle")):
             try:
-                with p.open("r", encoding="utf-8") as f:
-                    data: type[TypedDict] = json.load(f)
+                data: type[TypedDict] = self.load_full(p.stem)
                 meta: type[TypedDict] = data.get("meta", {})
                 sessions.append(
                     {
@@ -81,13 +76,13 @@ class ChatSessionManager:
                 continue
         return sessions
 
-    def load_full(self, sid: str) -> type[TypedDict]:
+    def load_full(self, sid: str) -> Any:
         """Load the full session data for a given ID."""
         p: Path = self._path(sid)
         if not p.exists():
             raise FileNotFoundError(sid)
-        with p.open("r", encoding="utf-8") as f:
-            return json.load(f)
+        with p.open("rb") as f:
+            return pickle.load(f)
 
     def get_messages(self) -> list[type[TypedDict]]:
         """Get the list of messages for the active session."""
@@ -96,11 +91,7 @@ class ChatSessionManager:
     def append_messages(self, messages: list[type[TypedDict]]) -> None:
         """Append messages to the active session and update its timestamp."""
         p: Path = self._path(self.active_session)
-        if not p.exists():
-            raise FileNotFoundError(self.active_session)
-        with p.open("r", encoding="utf-8") as f:
-            data: type[TypedDict] = json.load(f)
-
+        data: type[TypedDict] = self.load_full(self.active_session)
         data.setdefault("messages", []).extend(messages)
         data.setdefault("meta", {})["updated_at"] = _now()
         self._write(p, data)
