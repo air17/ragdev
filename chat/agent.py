@@ -91,6 +91,10 @@ class ChatAgent:
                                 "type": "string",
                                 "description": "The regex pattern to search for",
                             },
+                            "path": {
+                                "type": "string",
+                                "description": "The directory/file to search over (optional).",
+                            },
                         },
                     },
                 ),
@@ -293,6 +297,9 @@ class ChatAgent:
                     record.pop("distance", None)
                 result: str = json.dumps(vector_results)
             elif tool == "grep_search":
+                path: str = self.project_dir
+                if args.get("path"):
+                    path += "/" + args["path"]
                 result = search_codebase(args["query"], self.project_dir)
             elif tool == "read_file":
                 result = read_file_with_context(
