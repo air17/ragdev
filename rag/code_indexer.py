@@ -92,10 +92,12 @@ def process_directory(
                 )
             ]
             for filename in files:
+                file_path = os.path.join(root, filename)
+                rel_path = os.path.relpath(file_path, abs_directory)
                 process_file(
                     manager=manager,
-                    root=root,
-                    filename=filename,
+                    root=abs_directory,
+                    filename=rel_path,  # passing the relative path from project root
                     indexed_files=indexed_files,
                     batch_size=batch_size,
                 )
@@ -125,36 +127,36 @@ def process_file(
 
     Args:
         manager (EmbeddingManager): Instance of the embedding manager to handle vector DB operations.
-        root (str): Directory path containing the file.
-        filename (str): Name of the file to process.
+        root (str): Root directory of the project.
+        filename (str): Relative path of the file from the root directory.
         file_extensions (tuple[str]): List of file extensions to process.
         max_lines (int): Maximum number of lines for a regular chunk.
         max_func_lines (int): Maximum number of lines for a function chunk.
         batch_size (int): Number of chunks to process in each batch, defaults to 20.
-        indexed_files (tuple[str]): List of previously indexed files, defaults to an empty tuple.
+        indexed_files (set[str]): Set of previously indexed files, defaults to an empty set.
     """
-    file_path = os.path.join(root, filename)
-
+    # Skip files with unsupported extensions
     file_ext = os.path.splitext(filename)[1].lower()
     if file_ext not in file_extensions:
         return
 
     # Skip test files
-    if filename.lower().startswith("test_") or "tests/" in filename.lower():
+    if "test_" in os.path.basename(filename).lower() or "/test_" in filename.lower():
         print(f"Skipping test file: {filename}")
         return
-
-    rel_path = os.path.relpath(file_path, root)
 
     if indexed_files is None:
         indexed_files = set()
 
     # Skip already indexed files
-    if rel_path in indexed_files:
-        print(f"Skipping already indexed file: {rel_path}")
+    if filename in indexed_files:
+        print(f"Skipping already indexed file: {filename}")
         return
 
-    print(f"Processing file: {rel_path}")
+    # Get the full path of the file
+    file_path = os.path.join(root, filename)
+
+    print(f"Processing file: {filename}")
     try:
         # Generate chunks for the file
         chunks = chunk_file(file_path, max_lines, max_func_lines)
@@ -167,7 +169,7 @@ def process_file(
             start_line = chunk.get("start")
             end_line = chunk.get("end")
             chunk_content: str = read_file(file_path, start_line, end_line)
-            batch_chunks.append((chunk_content, rel_path, start_line, end_line))
+            batch_chunks.append((chunk_content, filename, start_line, end_line))
 
             # Add batch to vector database when batch size is reached
             if len(batch_chunks) >= batch_size:
@@ -181,10 +183,10 @@ def process_file(
             manager.add_to_vector_in_batch(batch_chunks)
 
         # Mark file as indexed
-        indexed_files.add(rel_path)
+        indexed_files.add(filename)
 
     except Exception as e:
-        print(f"Error processing {rel_path}: {str(e)}")
+        print(f"Error processing {filename}: {str(e)}")
 
 
 def index(
