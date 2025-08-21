@@ -302,14 +302,23 @@ class ChatAgent:
                     path += "/" + args["path"]
                 result = search_codebase(args["query"], self.project_dir)
             elif tool == "read_file":
-                end_line: int | None = args.get("end_line_one_indexed_inclusive")
+                end_line: int | None = (
+                    args.get("end_line_one_indexed_inclusive")
+                    or args.get("end_line_one_indexed")
+                    or args.get("end_line")
+                )
+                start_line: int | None = args.get("start_line_one_indexed") or args.get(
+                    "start_line"
+                )
+                if not start_line:
+                    raise ValueError("start_line is required")
                 # show additional 10 lines after end_line
                 if end_line:
                     end_line += 10
                 result = read_file_with_context(
                     self.project_dir + "/" + args["path"],
-                    int(args["start_line_one_indexed"]),
-                    end_line,
+                    int(start_line),
+                    int(end_line) if end_line else None,
                 )
             elif tool == "list_dir":
                 result = ls(self.project_dir + "/" + args["path"])
