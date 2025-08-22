@@ -31,11 +31,7 @@ ADMIN_HELP = (
     "/admin - Admin panel\n"
     "/ban - Ban user\n"
     "/activate - Activate user\n"
-    "/promote - Promote user"
-    "/settings - Your settings\n"
-    "/help - This help message\n"
-    "/chat <name(optional)> - Start a new chat session or join an existing one\n"
-    "/my_chats - List all the chat sessions\n"
+    "/promote - Promote user\n\n"
 )
 USER_HELP = (
     "📚 User Help:\n"
@@ -43,6 +39,10 @@ USER_HELP = (
     "/help - This help message\n"
     "/chat <name(optional)> - Start a new chat session or join an existing one\n"
     "/my_chats - List all the chat sessions\n"
+    "/list_branches - List all branches\n"
+    "/current_branch - Current branch\n"
+    "/fetch_current_branch - Fetch current branch\n"
+    "/switch_branch <branch_name> - Switch to a specific branch\n"
 )
 HELP_ERROR = "❌ Error retrieving help message. Please try again later."
 

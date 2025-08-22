@@ -12,6 +12,12 @@ from typing import Callable, Any, Awaitable
 import config
 from chat.agent import ChatAgent
 from chat.sessions import ChatSessionManager
+from project_management.git_utils import (
+    get_all_branches,
+    switch_branch,
+    get_current_branch,
+    fetch_current_branch,
+)
 from telegram_bot import const
 from telegram_bot.const import BotConstants
 from telegram_bot.db import (
@@ -36,6 +42,7 @@ class BotEventHandler:
         self.db: AsyncUserDatabase = db
         self.router: Router = Router()
         self.logger = logging.getLogger(self.__class__.__name__)
+        self.git_repo_path = config.DEFAULT_PROJECT_DIR
         self.setup_handlers()
 
     def setup_handlers(self):
@@ -49,6 +56,19 @@ class BotEventHandler:
         self.router.message.register(self.handle_activate_command, Command("activate"))
         self.router.message.register(self.handle_promote_command, Command("promote"))
         self.router.message.register(self.handle_settings_command, Command("settings"))
+        # Git
+        self.router.message.register(
+            self.handle_list_branches_command, Command("list_branches")
+        )
+        self.router.message.register(
+            self.handle_current_branch_command, Command("current_branch")
+        )
+        self.router.message.register(
+            self.handle_fetch_current_branch_command, Command("fetch_current_branch")
+        )
+        self.router.message.register(
+            self.handle_switch_branch_command, Command("switch_branch")
+        )
 
         # FSM handlers
         self.router.message.register(
@@ -144,7 +164,7 @@ class BotEventHandler:
             )
 
             help_text = (
-                const.ADMIN_HELP
+                const.ADMIN_HELP + const.USER_HELP
                 if user and user.user_role in (BotConstants.ROLE_SUPERADMIN,)
                 else const.USER_HELP
             )
@@ -663,6 +683,53 @@ class BotEventHandler:
             await message.answer(
                 "Sorry, I encountered an error processing your message. Please try again later."
             )
+
+    # Git commands
+
+    async def handle_list_branches_command(self, message: Message):
+        try:
+            await message.answer(
+                "List of branches: " + "\n".join(get_all_branches(self.git_repo_path))
+            )
+        except Exception as e:
+            self.logger.error(
+                f"Error handling list branches command: {e}", exc_info=True
+            )
+            await message.answer("List branches command error: " + str(e))
+
+    async def handle_switch_branch_command(self, message: Message):
+        try:
+            new_branch_name = message.text.split(" ")[1]
+            switch_branch(
+                config.DEFAULT_COLLECTION_NAME, self.git_repo_path, new_branch_name
+            )
+            await self.handle_current_branch_command(message)
+        except Exception as e:
+            self.logger.error(
+                f"Error handling switch branch command: {e}", exc_info=True
+            )
+            await message.answer("Switch branch command error: " + str(e))
+
+    async def handle_current_branch_command(self, message: Message):
+        try:
+            await message.answer(
+                "Current branch: " + get_current_branch(self.git_repo_path)
+            )
+        except Exception as e:
+            self.logger.error(
+                f"Error handling current branch command: {e}", exc_info=True
+            )
+            await message.answer("Current branch command error: " + str(e))
+
+    async def handle_fetch_current_branch_command(self, message: Message):
+        try:
+            fetch_current_branch(config.DEFAULT_COLLECTION_NAME, self.git_repo_path)
+            await message.answer("Current branch fetched.")
+        except Exception as e:
+            self.logger.error(
+                f"Error handling fetch current branch command: {e}", exc_info=True
+            )
+            await message.answer("Fetch current branch command error: " + str(e))
 
     # ==================== CALLBACK HANDLERS ====================
 
