@@ -3,11 +3,10 @@ from unittest.mock import AsyncMock, Mock, patch
 
 # Import your actual modules
 from telegram_bot.main import (
-    BotEventHandler,
     BotConstants,
-    UserStates,
-    DatabaseMiddleware,
 )
+from telegram_bot.event_handler import BotEventHandler, UserStates
+from telegram_bot.middleware import DatabaseMiddleware
 from telegram_bot.db import DatabaseError
 
 
@@ -116,7 +115,9 @@ class TestCommandHandlers:
     async def test_handle_start_command_success(
         self, bot_handler, mock_message, mock_fsm_context
     ):
-        with patch("telegram_bot.main.create_user_from_telegram") as mock_create_user:
+        with patch(
+            "telegram_bot.event_handler.create_user_from_telegram"
+        ) as mock_create_user:
             mock_create_user.return_value = Mock()
 
             await bot_handler.handle_start_command(mock_message, mock_fsm_context)
@@ -215,7 +216,9 @@ class TestMiddleware:
         mock_user = Mock(is_active=True)
         middleware.db.get_user.return_value = mock_user
 
-        with patch("telegram_bot.main.create_user_from_telegram") as mock_create:
+        with patch(
+            "telegram_bot.event_handler.create_user_from_telegram"
+        ) as mock_create:
             mock_create.return_value = Mock()
 
             result = await middleware(mock_handler, mock_message, {})
@@ -230,7 +233,7 @@ class TestMiddleware:
         mock_user = Mock(is_active=False)
         middleware.db.get_user.return_value = mock_user
 
-        with patch("telegram_bot.main.create_user_from_telegram"):
+        with patch("telegram_bot.event_handler.create_user_from_telegram"):
             result = await middleware(mock_handler, mock_message, {})
 
             mock_handler.assert_not_called()
@@ -246,7 +249,7 @@ class TestErrorHandling:
     ):
         bot_handler.db.add_user.side_effect = DatabaseError("DB Error")
 
-        with patch("telegram_bot.main.create_user_from_telegram"):
+        with patch("telegram_bot.event_handler.create_user_from_telegram"):
             await bot_handler.handle_start_command(mock_message, mock_fsm_context)
 
             # Should still respond to user
