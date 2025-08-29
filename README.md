@@ -15,7 +15,7 @@ This project implements a Retrieval-Augmented Generation (RAG) system using Milv
 1. Clone the repository:
 
 ```bash
-git clone https://github.com/yourusername/ragdev.git
+git clone https://github.com/air17/ragdev.git
 cd ragdev
 ```
 
@@ -72,6 +72,55 @@ DEFAULT_COLLECTION_NAME=code_chunks
 | DEFAULT_COLLECTION_NAME | Default name for the Milvus collection | No (defaults to "code_chunks") |
 
 ## Usage
+
+### Running the Telegram Bot
+
+For development and testing, you can run the bot directly:
+
+```bash
+python -c "import asyncio; from telegram_bot.main import setup_production_bot; asyncio.run(setup_production_bot())"
+```
+
+
+Alternatively, you can use `nohup` to ensure the process continues even after closing the terminal:
+
+```bash
+# Start with nohup (more robust for production)
+nohup python -c "import asyncio; from telegram_bot.main import setup_production_bot; asyncio.run(setup_production_bot())" > bot.log 2>&1 &
+
+# The process will continue running even after terminal disconnect
+```
+
+### Managing Embeddings
+
+#### Initial Setup - Generate Embeddings
+To generate embeddings for your project for the first time:
+
+```python
+from main import index_all
+
+# Generate embeddings for the current directory
+index_all()
+
+# Or for a specific directory
+index_all(directory="/path/to/your/project")
+```
+
+#### Regenerate Embeddings (Clear and Rebuild)
+To completely regenerate embeddings (useful when you want to start fresh or after major code changes), you can manually clear and rebuild embeddings:
+
+```python
+from main import index_all
+
+index_all(resume=False)
+```
+
+**Note**: Regenerating embeddings will:
+1. Delete the existing Milvus collection and all stored embeddings
+2. Create a fresh collection
+3. Process and index all files from scratch
+
+This is different from `index_all()` which resumes from previous progress by default.
 
 ### Quick start with `main.py`
 
