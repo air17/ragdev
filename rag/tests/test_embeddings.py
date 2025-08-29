@@ -33,6 +33,7 @@ def embedding_manager(mock_milvus_client, mock_genai_client):
         milvus_token="test_token",
         gemini_api_key="test_key",
         collection_name="test_collection",
+        vector_dimension=768,
     )
 
 

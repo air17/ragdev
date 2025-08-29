@@ -15,7 +15,7 @@ from config import (
 RETRIEVAL_DOCUMENT_TASK_TYPE = "RETRIEVAL_DOCUMENT"
 CODE_RETRIEVAL_QUERY_TASK_TYPE = "CODE_RETRIEVAL_QUERY"
 
-DEFAULT_VECTOR_DIMENSION = 768
+DEFAULT_VECTOR_DIMENSION = 3072
 
 
 class MilvusInsertData(TypedDict):
@@ -187,7 +187,13 @@ class EmbeddingManager:
             ),
         )
         [embedding_obj] = result.embeddings
-        embedding_values_np: np.array = np.array(embedding_obj.values)
+        embedding_values: list[float] = embedding_obj.values
+
+        if self.vector_dimension == 3072:
+            return embedding_values
+
+        # Normalize the embedding vector if dimension is not 3072
+        embedding_values_np: np._ArrayT = np.array(embedding_values)
         normed_embedding: list[float] = (
             embedding_values_np / np.linalg.norm(embedding_values_np)
         ).tolist()
