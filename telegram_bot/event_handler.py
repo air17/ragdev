@@ -712,7 +712,7 @@ class BotEventHandler:
     async def handle_current_branch_command(self, message: Message):
         try:
             await message.answer(
-                "Current branch: " + get_current_branch(self.git_repo_path)
+                "Current branch:\n" + get_current_branch(self.git_repo_path)
             )
         except Exception as e:
             self.logger.error(

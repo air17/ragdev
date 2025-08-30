@@ -1,524 +1,455 @@
-from unittest.mock import Mock, patch
+import pytest
+from unittest.mock import Mock, patch, mock_open
+from git import Repo, Commit
 
-import project_management.git_utils as git_utils
-
-
-def make_diff(a=None, b=None):
-    d = Mock()
-    d.a_path = a
-    d.b_path = b
-    return d
-
-
-def test_get_current_branch_success():
-    repo_mock = Mock()
-    active_branch = Mock()
-    active_branch.name = "main"
-    repo_mock.active_branch = active_branch
-
-    with patch("project_management.git_utils.Repo", return_value=repo_mock):
-        assert git_utils.get_current_branch("/some/path") == "main"
+# Import the functions to test (adjust import path as needed)
+from project_management.git_utils import (
+    switch_submodules_to_branch,
+    get_repo_changed_files_for_switch,
+    switch_branch,
+    fetch_repository,
+    get_changed_files,
+    fetch_submodules,
+    fetch_current_branch,
+    get_current_branch,
+    get_all_branches,
+)
 
 
-def test_get_current_branch_error_returns_none():
-    with patch(
-        "project_management.git_utils.Repo", side_effect=ValueError("not a repo")
+class TestSwitchSubmodulesToBranch:
+    @patch("builtins.open", mock_open(read_data="submodule1\nsubmodule2\n"))
+    @patch("project_management.git_utils.Repo")
+    @patch("project_management.git_utils.get_repo_changed_files_for_switch")
+    def test_switch_submodules_success(self, mock_get_changed_files, mock_repo_class):
+        # Arrange
+        mock_repo = Mock()
+        mock_repo.active_branch.name = "old_branch"
+        mock_repo_class.return_value = mock_repo
+        mock_get_changed_files.return_value = {"file1.py", "file2.py"}
+
+        # Act
+        result = switch_submodules_to_branch("/repo", "new_branch")
+
+        # Assert
+        assert isinstance(result, set)
+        mock_repo.git.checkout.assert_called_with("new_branch")
+        assert mock_get_changed_files.call_count == 2  # Called for each submodule
+
+    @patch("builtins.open", side_effect=FileNotFoundError)
+    def test_switch_submodules_no_file(self, mock_open):
+        # Act
+        result = switch_submodules_to_branch("/repo", "new_branch")
+
+        # Assert
+        assert result == set()
+
+    @patch("builtins.open", mock_open(read_data="submodule1\n"))
+    @patch("project_management.git_utils.Repo")
+    def test_switch_submodules_already_on_branch(self, mock_repo_class, capsys):
+        # Arrange
+        mock_repo = Mock()
+        mock_repo.active_branch.name = "target_branch"
+        mock_repo_class.return_value = mock_repo
+
+        # Act
+        result = switch_submodules_to_branch("/repo", "target_branch")
+
+        # Assert
+        captured = capsys.readouterr()
+        assert "already on branch" in captured.out.lower()
+        assert isinstance(result, set)
+
+
+class TestGetRepoChangedFilesForSwitch:
+    @patch("project_management.git_utils.Repo")
+    def test_get_changed_files_success(self, mock_repo_class):
+        # Arrange
+        mock_repo = Mock()
+        mock_old_commit = Mock()
+        mock_new_commit = Mock()
+        mock_repo.commit.side_effect = [mock_old_commit, mock_new_commit]
+
+        mock_diff_item = Mock()
+        mock_diff_item.a_path = "file1.py"
+        mock_diff_item.b_path = None
+        mock_old_commit.diff.return_value = [mock_diff_item]
+
+        # Act
+        result = get_repo_changed_files_for_switch(mock_repo, "old", "new")
+
+        # Assert
+        assert result == {"file1.py"}
+        mock_old_commit.diff.assert_called_once_with(mock_new_commit)
+
+    def test_get_changed_files_exception(self, capsys):
+        # Arrange
+        mock_repo = Mock()
+        mock_repo.commit.side_effect = Exception("Git error")
+
+        # Act
+        result = get_repo_changed_files_for_switch(mock_repo, "old", "new")
+
+        # Assert
+        assert result == set()
+        captured = capsys.readouterr()
+        assert "warning" in captured.out.lower()
+
+
+class TestSwitchBranch:
+    @patch("project_management.git_utils.reindex_files")
+    @patch("project_management.git_utils.switch_submodules_to_branch")
+    @patch("project_management.git_utils.get_repo_changed_files_for_switch")
+    @patch("project_management.git_utils.Repo")
+    def test_switch_branch_success(
+        self,
+        mock_repo_class,
+        mock_get_changed_files,
+        mock_switch_submodules,
+        mock_reindex,
     ):
-        assert git_utils.get_current_branch("/bad/path") is None
+        # Arrange
+        mock_repo = Mock()
+        mock_repo.active_branch.name = "old_branch"
+        mock_repo_class.return_value = mock_repo
+        mock_get_changed_files.return_value = {"file1.py"}
+        mock_switch_submodules.return_value = {"file2.py"}
 
+        # Act
+        switch_branch("collection", "/repo", "new_branch")
 
-def test_get_all_branches_local_and_remote():
-    # local branches - __str__ used in code
-    b1 = Mock()
-    b1.__str__ = Mock(return_value="dev")
-    b2 = Mock()
-    b2.__str__ = Mock(return_value="feature/x")
+        # Assert
+        mock_repo.git.checkout.assert_called_once_with("new_branch")
+        mock_reindex.assert_called_once_with(
+            "collection", {"file1.py", "file2.py"}, "/repo"
+        )
 
-    # remote refs: remote.refs is iterated and ref.name is used
-    remote_ref1 = Mock()
-    remote_ref1.name = "origin/feature/x"
-    remote_ref2 = Mock()
-    remote_ref2.name = "origin/HEAD"  # should be skipped
-    remote_ref3 = Mock()
-    remote_ref3.name = "origin/main"
+    @patch("project_management.git_utils.Repo")
+    def test_switch_branch_already_on_target(self, mock_repo_class, capsys):
+        # Arrange
+        mock_repo = Mock()
+        mock_repo.active_branch.name = "target_branch"
+        mock_repo_class.return_value = mock_repo
 
-    remote1 = Mock()
-    remote1.name = "origin"
-    remote1.refs = [remote_ref1, remote_ref2, remote_ref3]
+        # Act
+        switch_branch("collection", "/repo", "target_branch")
 
-    repo_mock = Mock()
-    repo_mock.branches = [b1, b2]
-    repo_mock.remotes = [remote1]
+        # Assert
+        captured = capsys.readouterr()
+        assert "already on branch" in captured.out.lower()
 
-    # repo.git.fetch should be called but may raise - we let it pass
-    with patch("project_management.git_utils.Repo", return_value=repo_mock):
-        branches = git_utils.get_all_branches("/repo")
-        # should include local 'dev', 'feature/x' and remote 'feature/x' and 'main' (unique)
-        assert set(branches) == {"dev", "feature/x", "main"}
+    @patch("project_management.git_utils.reindex_files")
+    @patch("project_management.git_utils.switch_submodules_to_branch")
+    @patch("project_management.git_utils.get_repo_changed_files_for_switch")
+    @patch("project_management.git_utils.Repo")
+    def test_switch_branch_no_changes(
+        self,
+        mock_repo_class,
+        mock_get_changed_files,
+        mock_switch_submodules,
+        mock_reindex,
+        capsys,
+    ):
+        # Arrange
+        mock_repo = Mock()
+        mock_repo.active_branch.name = "old_branch"
+        mock_repo_class.return_value = mock_repo
+        mock_get_changed_files.return_value = set()
+        mock_switch_submodules.return_value = set()
 
+        # Act
+        switch_branch("collection", "/repo", "new_branch")
 
-def test_get_all_branches_repo_error_returns_empty():
-    with patch("project_management.git_utils.Repo", side_effect=Exception("boom")):
-        assert git_utils.get_all_branches("/no/repo") == []
-
-
-def test_get_main_repo_changed_files():
-    old = Mock()
-    new = Mock()
-    diffs = [make_diff(a="a.txt"), make_diff(b="b.txt")]
-    old.diff.return_value = diffs
-
-    changed = git_utils.get_main_repo_changed_files(old, new)
-    assert changed == {"a.txt", "b.txt"}
-
-
-def test_get_submodule_changed_files():
-    # Helper class to emulate remotes that are indexable by int and by name (string)
-    class FakeRemotes(list):
-        def __init__(self, remotes):
-            super().__init__(remotes)
-            self._by_name = {r.name: r for r in remotes}
-
-        def __getitem__(self, key):
-            if isinstance(key, int):
-                return list.__getitem__(self, key)
-            return self._by_name[key]
-
-    # prepare submodule objects
-    submodule = Mock()
-    submodule.name = "sub1"
-    submodule.path = "libs/sub1"
-    submodule.module_exists.return_value = True
-
-    # sub-repo inside submodule
-    sub_repo = Mock()
-
-    # remote object with refs mapping
-    remote = Mock()
-    remote.name = "origin"
-    # ref object to be stored in remote.refs
-    ref_main = Mock()
-    ref_main.name = "origin/main"
-    # remote should support .refs[...] access that returns an object with .commit
-    remote.refs = {"main": Mock(commit=Mock())}
-    # For iteration, remote.refs is not iterated in this function, so it's fine.
-
-    # set remotes to our FakeRemotes which supports both integer and string indexing
-    sub_repo.remotes = FakeRemotes([remote])
-
-    # active branch name
-    active_branch = Mock()
-    active_branch.name = "main"
-    sub_repo.active_branch = active_branch
-
-    # new remote commit (the 'new' commit)
-    new_remote_commit = Mock()
-    remote.refs["main"].commit = new_remote_commit
-
-    # old remote commit passed in submodule_old_commits
-    old_remote_commit = Mock()
-    # its diff against new_remote_commit returns diffs
-    old_remote_commit.diff.return_value = [
-        make_diff(a="file1.py"),
-        make_diff(b="file2.py"),
-    ]
-
-    # module() should return sub_repo
-    submodule.module.return_value = sub_repo
-
-    # repo.submodules is iterable
-    repo = Mock()
-    repo.submodules = [submodule]
-
-    submodule_old_commits = {"sub1": old_remote_commit}
-
-    changed = git_utils.get_submodule_changed_files(repo, submodule_old_commits)
-    assert changed == {"libs/sub1/file1.py", "libs/sub1/file2.py"}
-
-
-@patch("project_management.git_utils.get_submodule_old_commits_for_switch")
-@patch("project_management.git_utils.switch_submodules_to_branch")
-@patch("project_management.git_utils.get_main_repo_changed_files_for_switch")
-@patch("project_management.git_utils.get_submodule_changed_files_for_switch")
-@patch("project_management.git_utils.reindex_files")
-def test_switch_branch_noop_when_same_branch(
-    mock_reindex,
-    mock_sub_changed,
-    mock_main_changed,
-    mock_switch_subs,
-    mock_get_old_commits,
-):
-    repo_mock = Mock()
-    active = Mock()
-    active.name = "main"
-    repo_mock.active_branch = active
-
-    with patch("project_management.git_utils.Repo", return_value=repo_mock):
-        # when new_branch_name equals current branch, function should return early and not call reindex
-        git_utils.switch_branch("col", "/repo", "main")
+        # Assert
+        captured = capsys.readouterr()
+        assert "no changed files found" in captured.out.lower()
         mock_reindex.assert_not_called()
 
 
-@patch("project_management.git_utils.get_submodule_old_commits_for_switch")
-@patch("project_management.git_utils.switch_submodules_to_branch")
-@patch("project_management.git_utils.get_main_repo_changed_files_for_switch")
-@patch("project_management.git_utils.get_submodule_changed_files_for_switch")
-@patch("project_management.git_utils.reindex_files")
-def test_switch_branch_triggers_reindex_when_changes(
-    mock_reindex,
-    mock_sub_changed,
-    mock_main_changed,
-    mock_switch_subs,
-    mock_get_old_commits,
-):
-    repo_mock = Mock()
-    active = Mock()
-    active.name = "dev"
-    repo_mock.active_branch = active
-    # ensure checkout exists and will be called
-    repo_mock.git = Mock()
-
-    mock_get_old_commits.return_value = {"sub1": Mock()}
-    # simulate changed files
-    mock_main_changed.return_value = {"a.txt"}
-    mock_sub_changed.return_value = {"libs/sub1/b.txt"}
-
-    with patch("project_management.git_utils.Repo", return_value=repo_mock):
-        git_utils.switch_branch("col", "/repo", "main")
-        # checkout on main should have been called
-        repo_mock.git.checkout.assert_called_once_with("main")
-        # reindex_files called with union of files
-        mock_reindex.assert_called_once_with(
-            "col", {"a.txt", "libs/sub1/b.txt"}, "/repo"
-        )
-
-
-@patch("project_management.git_utils.get_submodule_old_commits")
-@patch("project_management.git_utils.fetch_main_repository")
-@patch("project_management.git_utils.fetch_submodules")
-@patch("project_management.git_utils.get_main_repo_changed_files")
-@patch("project_management.git_utils.get_submodule_changed_files")
-@patch("project_management.git_utils.reindex_files")
-def test_fetch_current_branch_no_changes(
-    mock_reindex,
-    mock_sub_changed,
-    mock_main_changed,
-    mock_fetch_subs,
-    mock_fetch_main,
-    mock_get_old_commits,
-):
-    repo_mock = Mock()
-    mock_get_old_commits.return_value = {}
-    # fetch_main_repository returns old, new commits
-    mock_fetch_main.return_value = (Mock(), Mock())
-    mock_main_changed.return_value = set()
-    mock_sub_changed.return_value = set()
-
-    with patch("project_management.git_utils.Repo", return_value=repo_mock):
-        git_utils.fetch_current_branch("col", "/repo")
-        mock_reindex.assert_not_called()
-
-
-@patch("project_management.git_utils.get_submodule_old_commits")
-@patch("project_management.git_utils.fetch_main_repository")
-@patch("project_management.git_utils.fetch_submodules")
-@patch("project_management.git_utils.get_main_repo_changed_files")
-@patch("project_management.git_utils.get_submodule_changed_files")
-@patch("project_management.git_utils.reindex_files")
-def test_fetch_current_branch_with_changes(
-    mock_reindex,
-    mock_sub_changed,
-    mock_main_changed,
-    mock_fetch_subs,
-    mock_fetch_main,
-    mock_get_old_commits,
-):
-    repo_mock = Mock()
-    mock_get_old_commits.return_value = {}
-
-    mock_fetch_main.return_value = (Mock(), Mock())
-    mock_main_changed.return_value = {"top.txt"}
-    mock_sub_changed.return_value = {"libs/s/x.txt"}
-
-    with patch("project_management.git_utils.Repo", return_value=repo_mock):
-        git_utils.fetch_current_branch("col", "/repo")
-        mock_reindex.assert_called_once_with(
-            "col", {"top.txt", "libs/s/x.txt"}, "/repo"
-        )
-
-
-def test_get_submodule_old_commits_for_switch_no_submodules():
-    repo = Mock()
-    repo.submodules = []
-    assert git_utils.get_submodule_old_commits_for_switch(repo) == {}
-
-
-def test_get_submodule_old_commits_for_switch_with_valid_submodule():
-    # submodule with module that has a valid head and commit
-    submodule = Mock()
-    submodule.name = "s1"
-    submodule.module_exists.return_value = True
-    sub_repo = Mock()
-    head = Mock()
-    head.is_valid.return_value = True
-    head.commit = "commit-s1"
-    sub_repo.head = head
-    submodule.module.return_value = sub_repo
-
-    repo = Mock()
-    repo.submodules = [submodule]
-
-    res = git_utils.get_submodule_old_commits_for_switch(repo)
-    assert res == {"s1": "commit-s1"}
-
-
-def test_get_submodule_old_commits_for_switch_handles_exceptions(capfd):
-    submodule = Mock()
-    submodule.name = "s1"
-    # module_exists True but module() raises
-    submodule.module_exists.return_value = True
-    submodule.module.side_effect = Exception("bad module")
-
-    repo = Mock()
-    repo.submodules = [submodule]
-
-    res = git_utils.get_submodule_old_commits_for_switch(repo)
-    assert res == {}
-    captured = capfd.readouterr()
-    assert "Warning: Failed to get current commit for submodule s1" in captured.out
-
-
-def test_switch_submodules_to_branch_no_submodules():
-    repo = Mock()
-    repo.submodules = []
-    # should not raise
-    git_utils.switch_submodules_to_branch(repo, "any-branch")
-
-
-def test_switch_submodules_to_branch_switches_when_branch_exists():
-    submodule = Mock()
-    submodule.name = "s1"
-    submodule.module_exists.return_value = True
-    submodule.module.side_effect = None
-
-    sub_repo = Mock()
-    # refs with names like 'origin/main' -> split("/")[-1] yields 'main'
-    ref1 = Mock()
-    ref1.name = "origin/main"
-    sub_repo.refs = [ref1]
-    sub_repo.git = Mock()
-
-    submodule.module.return_value = sub_repo
-
-    repo = Mock()
-    repo.submodules = [submodule]
-
-    git_utils.switch_submodules_to_branch(repo, "main")
-    sub_repo.git.checkout.assert_called_once_with("main")
-
-
-def test_switch_submodules_to_branch_warns_when_branch_missing(capfd):
-    submodule = Mock()
-    submodule.name = "s1"
-    submodule.module_exists.return_value = True
-
-    sub_repo = Mock()
-    ref1 = Mock()
-    ref1.name = "origin/other"
-    sub_repo.refs = [ref1]
-    sub_repo.git = Mock()
-
-    submodule.module.return_value = sub_repo
-
-    repo = Mock()
-    repo.submodules = [submodule]
-
-    git_utils.switch_submodules_to_branch(repo, "main")
-    captured = capfd.readouterr()
-    assert "Warning: Branch main does not exist in submodule s1" in captured.out
-
-
-def test_get_main_repo_changed_files_for_switch_success():
-    repo = Mock()
-    old_commit = Mock()
-    new_commit = Mock()
-    old_commit.diff.return_value = [make_diff(a="a"), make_diff(b="b")]
-
-    # repo.commit should return corresponding commits for names 'old' and 'new'
-    repo.commit.side_effect = lambda name: {"old": old_commit, "new": new_commit}[name]
-
-    changed = git_utils.get_main_repo_changed_files_for_switch(repo, "old", "new")
-    assert changed == {"a", "b"}
-
-
-def test_get_main_repo_changed_files_for_switch_handles_exception(capfd):
-    repo = Mock()
-    repo.commit.side_effect = Exception("no commit")
-    changed = git_utils.get_main_repo_changed_files_for_switch(repo, "o", "n")
-    assert changed == set()
-    captured = capfd.readouterr()
-    assert "Warning: Failed to get changed files between branches" in captured.out
-
-
-def test_get_submodule_changed_files_for_switch_no_submodules():
-    repo = Mock()
-    repo.submodules = []
-    assert git_utils.get_submodule_changed_files_for_switch(repo, {}) == set()
-
-
-def test_get_submodule_changed_files_for_switch_with_changes():
-    submodule = Mock()
-    submodule.name = "sub1"
-    submodule.path = "libs/sub1"
-    submodule.module_exists.return_value = True
-    sub_repo = Mock()
-    # head valid and has commit
-    head = Mock()
-    head.is_valid.return_value = True
-    new_commit = Mock()
-    head.commit = new_commit
-    sub_repo.head = head
-
-    submodule.module.return_value = sub_repo
-
-    # old commit that will diff to new_commit
-    old_commit = Mock()
-    old_commit.diff.return_value = [make_diff(a="f1.py"), make_diff(b="f2.py")]
-
-    repo = Mock()
-    repo.submodules = [submodule]
-
-    res = git_utils.get_submodule_changed_files_for_switch(repo, {"sub1": old_commit})
-    assert res == {"libs/sub1/f1.py", "libs/sub1/f2.py"}
-
-
-def test_get_submodule_changed_files_for_switch_handles_exceptions(capfd):
-    submodule = Mock()
-    submodule.name = "s1"
-    submodule.path = "s1path"
-    # module_exists True but module() raises
-    submodule.module_exists.return_value = True
-    submodule.module.side_effect = Exception("boom")
-
-    repo = Mock()
-    repo.submodules = [submodule]
-
-    res = git_utils.get_submodule_changed_files_for_switch(repo, {"s1": Mock()})
-    assert res == set()
-    captured = capfd.readouterr()
-    assert "Warning: Failed to get changed files from submodule s1" in captured.out
-
-
-def test_fetch_main_repository_success():
-    # Build a remotes container that supports indexing by name and by index
-    class FakeRemotes(list):
-        def __init__(self, remotes):
-            super().__init__(remotes)
-            self._by_name = {r.name: r for r in remotes}
-
-        def __getitem__(self, key):
-            if isinstance(key, int):
-                return list.__getitem__(self, key)
-            return self._by_name[key]
-
-    # remote and refs
-    remote = Mock()
-    remote.name = "origin"
-    # remote.refs[...] should be accessible by name; use dict-like object
-    commit_before = Mock()
-    commit_after = Mock()
-    # make a "refs" object that returns objects with .commit
-    refs = {"main": Mock(commit=commit_before)}
-    remote.refs = refs
-
-    repo = Mock()
-    # remotes must be indexable by int and by name
-    repo.remotes = FakeRemotes([remote])
-    # active branch
-    active = Mock()
-    active.name = "main"
-    repo.active_branch = active
-
-    # simulate fetch changing the commit object stored under remote.refs['main'].commit
-    def do_fetch(*args, **kwargs):
-        # mutate the remote.refs to new commit
-        remote.refs["main"].commit = commit_after
-
-    repo.git.fetch.side_effect = do_fetch
-
-    old, new = git_utils.fetch_main_repository(repo)
-    assert old is commit_before
-    assert new is commit_after
-
-
-def test_get_submodule_old_commits_when_module_exists_and_when_not():
-    # Provide a remotes container that supports indexing by int and by name
-    class FakeRemotes(list):
-        def __init__(self, remotes):
-            super().__init__(remotes)
-            self._by_name = {r.name: r for r in remotes}
-
-        def __getitem__(self, key):
-            if isinstance(key, int):
-                return list.__getitem__(self, key)
-            return self._by_name[key]
-
-    # submodule that exists and has remotes
-    sub1 = Mock()
-    sub1.name = "s1"
-    sub1.module_exists.return_value = True
-
-    sub_repo1 = Mock()
-    remote1 = Mock()
-    remote1.name = "origin"
-    # remote.refs should support access by branch name and return an object with .commit
-    remote1.refs = {"main": Mock(commit="old-commit-s1")}
-
-    # Use FakeRemotes so code can do remotes[0] and remotes['origin']
-    sub_repo1.remotes = FakeRemotes([remote1])
-
-    active_branch = Mock()
-    active_branch.name = "main"
-    sub_repo1.active_branch = active_branch
-
-    sub1.module.return_value = sub_repo1
-
-    # submodule that does not exist -> update called
-    sub2 = Mock()
-    sub2.name = "s2"
-    sub2.module_exists.return_value = False
-
-    repo = Mock()
-    repo.submodules = [sub1, sub2]
-
-    res = git_utils.get_submodule_old_commits(repo)
-    # should contain entry for s1, and not for s2
-    assert res == {"s1": "old-commit-s1"}
-    sub2.update.assert_called_once_with(init=True, recursive=True)
-
-
-def test_fetch_submodules_calls_fetch_and_handles_exceptions(capfd):
-    # submodule with module exists and remotes -> fetch should be called
-    s1 = Mock()
-    s1.name = "s1"
-    s1.module_exists.return_value = True
-    r1 = Mock()
-    r1.name = "origin"
-    sub_repo1 = Mock()
-    sub_repo1.remotes = [r1]
-    sub_repo1.git = Mock()
-    s1.module.return_value = sub_repo1
-
-    # submodule that raises on module()
-    s2 = Mock()
-    s2.name = "s2"
-    s2.module_exists.return_value = True
-    s2.module.side_effect = Exception("boom")
-
-    repo = Mock()
-    repo.submodules = [s1, s2]
-
-    git_utils.fetch_submodules(repo)
-    sub_repo1.git.fetch.assert_called_once_with("--prune")
-    captured = capfd.readouterr()
-    assert "Warning: Failed to fetch submodule s2" in captured.out
+class TestFetchRepository:
+    def test_fetch_repository_success(self):
+        # Arrange
+        mock_repo = Mock()
+
+        # Mock the remote access
+        mock_remote = Mock()
+        mock_remote.name = "origin"
+
+        # Mock repo.remotes to support both [0] and ['origin'] access
+        def remotes_getitem(key):
+            if key == 0 or key == "origin":
+                return mock_remote
+            raise KeyError(key)
+
+        mock_repo.remotes.__getitem__ = Mock(side_effect=remotes_getitem)
+
+        # Mock active branch
+        mock_repo.active_branch.name = "main"
+
+        # Mock commits - these will be the return values
+        old_commit = Mock()
+        new_commit = Mock()
+
+        # Mock the refs access chain
+        mock_ref = Mock()
+        mock_ref.commit = old_commit  # Initially return old commit
+
+        mock_refs = Mock()
+        mock_refs.__getitem__ = Mock(return_value=mock_ref)
+        mock_remote.refs = mock_refs
+
+        # Mock git fetch and change commit after fetch
+        def mock_fetch(*args):
+            mock_ref.commit = new_commit  # Change commit after fetch
+
+        mock_repo.git = Mock()
+        mock_repo.git.fetch.side_effect = mock_fetch
+
+        # Act
+        result = fetch_repository(mock_repo, "")
+
+        # Assert
+        assert isinstance(result, tuple)
+        assert len(result) == 3
+        assert result[0] == old_commit
+        assert result[1] == new_commit
+        mock_repo.git.fetch.assert_called_once_with("--all", "--prune")
+
+
+class TestGetChangedFiles:
+    def test_get_changed_files_success(self):
+        # Arrange
+        mock_old_commit = Mock()
+        mock_new_commit = Mock()
+
+        mock_diff_item = Mock()
+        mock_diff_item.a_path = "file1.py"
+        mock_diff_item.b_path = None
+        mock_old_commit.diff.return_value = [mock_diff_item]
+
+        # Act
+        result = get_changed_files(mock_old_commit, mock_new_commit)
+
+        # Assert
+        assert result == {"file1.py"}
+
+
+class TestFetchSubmodules:
+    @patch("builtins.open", mock_open(read_data="submodule1\nsubmodule2\n"))
+    @patch("project_management.git_utils.Repo")
+    @patch("project_management.git_utils.fetch_repository")
+    def test_fetch_submodules_success(self, mock_fetch_repo, mock_repo_class):
+        # Arrange
+        mock_fetch_repo.return_value = (Mock(), Mock())
+        mock_fetch_repo.return_value = (Mock(), Mock(), "")  # Added third parameter
+        # Act
+        result = fetch_submodules("/repo")
+
+        # Assert
+        assert isinstance(result, list)
+        assert len(result) == 2
+        assert mock_fetch_repo.call_count == 2
+
+    @patch("builtins.open", side_effect=FileNotFoundError)
+    def test_fetch_submodules_no_file(self, mock_open):
+        # Act
+        result = fetch_submodules("/repo")
+
+        # Assert
+        assert result == []
+
+
+class TestFetchCurrentBranch:
+    @patch("project_management.git_utils.reindex_files")
+    @patch("project_management.git_utils.fetch_submodules")
+    @patch("project_management.git_utils.fetch_repository")
+    @patch("project_management.git_utils.get_changed_files")
+    @patch("project_management.git_utils.Repo")
+    def test_fetch_current_branch_with_changes(
+        self,
+        mock_repo_class,
+        mock_get_changed_files,
+        mock_fetch_repo,
+        mock_fetch_submodules,
+        mock_reindex,
+    ):
+        # Arrange
+        mock_repo = Mock()
+        mock_repo_class.return_value = mock_repo
+        mock_fetch_repo.return_value = (Mock(), Mock())
+        mock_fetch_repo.return_value = (Mock(), Mock(), "")  # Added third parameter
+        mock_fetch_submodules.return_value = [
+            (Mock(), Mock(), "sub1/")
+        ]  # Added third parameter
+
+        # Act
+        fetch_current_branch("collection", "/repo")
+
+        # Assert
+        mock_reindex.assert_called_once()
+
+    @patch("project_management.git_utils.fetch_submodules")
+    @patch("project_management.git_utils.fetch_repository")
+    @patch("project_management.git_utils.get_changed_files")
+    @patch("project_management.git_utils.Repo")
+    def test_fetch_current_branch_no_changes(
+        self,
+        mock_repo_class,
+        mock_get_changed_files,
+        mock_fetch_repo,
+        mock_fetch_submodules,
+        capsys,
+    ):
+        # Arrange
+        mock_repo = Mock()
+        mock_repo_class.return_value = mock_repo
+        mock_fetch_repo.return_value = (Mock(), Mock())
+        mock_fetch_repo.return_value = (Mock(), Mock(), "")  # Added third parameter
+        mock_get_changed_files.return_value = set()
+
+        # Act
+        fetch_current_branch("collection", "/repo")
+
+        # Assert
+        captured = capsys.readouterr()
+        assert "no changes detected" in captured.out.lower()
+
+
+class TestGetCurrentBranch:
+    @patch("builtins.open", mock_open(read_data="submodule1\nsubmodule2\n"))
+    @patch("project_management.git_utils.Repo")
+    def test_get_current_branch_with_submodules(self, mock_repo_class):
+        # Arrange
+        main_repo = Mock()
+        main_repo.active_branch.name = "main"
+
+        sub_repo1 = Mock()
+        sub_repo1.active_branch.name = "feature1"
+
+        sub_repo2 = Mock()
+        sub_repo2.active_branch.name = "feature2"
+
+        mock_repo_class.side_effect = [main_repo, sub_repo1, sub_repo2]
+
+        # Act
+        result = get_current_branch("/repo")
+
+        # Assert
+        assert "Main repo: main" in result
+        assert "feature1" in result
+        assert "feature2" in result
+
+    @patch("builtins.open", side_effect=FileNotFoundError)
+    @patch("project_management.git_utils.Repo")
+    def test_get_current_branch_no_submodules(self, mock_repo_class, mock_open):
+        # Arrange
+        mock_repo = Mock()
+        mock_repo.active_branch.name = "main"
+        mock_repo_class.return_value = mock_repo
+
+        # Act
+        result = get_current_branch("/repo")
+
+        # Assert
+        assert result == "Main repo: main"
+
+    @patch("project_management.git_utils.Repo", side_effect=Exception("Not a git repo"))
+    def test_get_current_branch_not_git_repo(self, mock_repo_class):
+        # Act
+        result = get_current_branch("/not-a-repo")
+
+        # Assert
+        assert result is None
+
+    @patch("project_management.git_utils.Repo", side_effect=ValueError("Detached HEAD"))
+    def test_get_current_branch_detached_head(self, mock_repo_class):
+        # Act
+        result = get_current_branch("/repo")
+
+        # Assert
+        assert result is None
+
+
+class TestGetAllBranches:
+    @patch("project_management.git_utils.Repo")
+    def test_get_all_branches_success(self, mock_repo_class):
+        # Arrange
+        mock_repo = Mock()
+        mock_repo_class.return_value = mock_repo
+
+        # Mock local branches
+        mock_branch1 = Mock()
+        mock_branch1.__str__ = lambda x: "main"
+        mock_branch2 = Mock()
+        mock_branch2.__str__ = lambda x: "feature/test"
+        mock_repo.branches = [mock_branch1, mock_branch2]
+
+        # Mock remotes
+        mock_remote = Mock()
+        mock_remote.name = "origin"
+        mock_ref1 = Mock()
+        mock_ref1.name = "origin/develop"
+        mock_ref2 = Mock()
+        mock_ref2.name = "origin/HEAD"  # Should be filtered out
+        mock_remote.refs = [mock_ref1, mock_ref2]
+        mock_repo.remotes = [mock_remote]
+
+        # Act
+        result = get_all_branches("/repo")
+
+        # Assert
+        assert isinstance(result, list)
+        assert "main" in result
+        assert "feature/test" in result
+        assert "develop" in result
+        assert "HEAD" not in result
+        mock_repo.git.fetch.assert_called_once_with("--all", "--prune")
+
+    @patch("project_management.git_utils.Repo")
+    def test_get_all_branches_fetch_error(self, mock_repo_class, capsys):
+        # Arrange
+        mock_repo = Mock()
+        mock_repo_class.return_value = mock_repo
+        mock_repo.git.fetch.side_effect = Exception("Network error")
+        mock_repo.branches = []
+        mock_repo.remotes = []
+
+        # Act
+        result = get_all_branches("/repo")
+
+        # Assert
+        assert isinstance(result, list)
+        captured = capsys.readouterr()
+        assert "error fetching remote branches" in captured.out.lower()
+
+    @patch("project_management.git_utils.Repo", side_effect=Exception("Not a git repo"))
+    def test_get_all_branches_not_git_repo(self, mock_repo_class):
+        # Act
+        result = get_all_branches("/not-a-repo")
+
+        # Assert
+        assert result == []
+
+
+# Fixtures that might be useful for more complex testing
+@pytest.fixture
+def mock_repo():
+    """Fixture providing a mock Git repository."""
+    repo = Mock(spec=Repo)
+    repo.active_branch.name = "main"
+    repo.remotes = []
+    repo.branches = []
+    return repo
+
+
+@pytest.fixture
+def mock_commit():
+    """Fixture providing a mock Git commit."""
+    commit = Mock(spec=Commit)
+    commit.diff.return_value = []
+    return commit
+
+
+@pytest.fixture
+def sample_submodules_file():
+    """Fixture providing sample submodules file content."""
+    return "submodule1\nsubmodule2\n\n"  # Include empty line to test filtering
