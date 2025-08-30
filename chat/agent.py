@@ -205,9 +205,8 @@ class ChatAgent:
                 ),
             ),
         )
-        self.project_prompt = self._get_project_prompt()
         self.system_prompt = SYSTEM_PROMPT.format(
-            project_tree=ls(self.project_dir), project_prompt=self.project_prompt
+            project_tree=ls(self.project_dir), project_prompt=self._get_project_prompt()
         )
 
     def get_deepseek_response_text(self, user_question: str) -> str:
@@ -229,13 +228,6 @@ class ChatAgent:
             print(
                 f"ASSISTANT_OUTPUT: {new_assistant_message.content}\nTOOL_CALLS: {new_assistant_message.tool_calls}"
             )
-            self._append_message(
-                ChatCompletionAssistantMessageParam(
-                    content=new_assistant_message.content,
-                    role="assistant",
-                    tool_calls=new_assistant_message.tool_calls,
-                )
-            )
             if new_assistant_message.tool_calls:
                 iterations += 1
                 if iterations > self.max_iterations:
@@ -254,20 +246,29 @@ class ChatAgent:
                     )
                     return self.messages[-1].content
 
-                tool = new_assistant_message.tool_calls[0].function.name
-                args_json = new_assistant_message.tool_calls[0].function.arguments
-                args = json.loads(args_json)
-                print(f"TOOL_CALL: {tool}({args})")
-                # Dispatch
-                result: str = self.dispatch_tool_call(tool, args)
-                print(f"TOOL_RESULT: {result}")
                 self._append_message(
-                    ChatCompletionToolMessageParam(
-                        role="tool",
-                        tool_call_id=new_assistant_message.tool_calls[0].id,
-                        content=json.dumps(result),
+                    ChatCompletionAssistantMessageParam(
+                        content=new_assistant_message.content,
+                        role="assistant",
+                        tool_calls=new_assistant_message.tool_calls,
                     )
                 )
+
+                for tool_call in new_assistant_message.tool_calls:
+                    tool = tool_call.function.name
+                    args_json = tool_call.function.arguments
+                    args = json.loads(args_json)
+                    print(f"TOOL_CALL: {tool}({args})")
+                    # Dispatch
+                    result: str = self.dispatch_tool_call(tool, args)
+                    print(f"TOOL_RESULT: {result}")
+                    self._append_message(
+                        ChatCompletionToolMessageParam(
+                            role="tool",
+                            tool_call_id=tool_call.id,
+                            content=json.dumps(result),
+                        )
+                    )
             else:
                 response_text: str = new_assistant_message.content
                 return response_text
@@ -349,7 +350,7 @@ class ChatAgent:
     def _get_project_prompt(self) -> str:
         try:
             with open(os.path.join(self.project_dir, "project_prompt.txt"), "r") as f:
-                prompt: str = "\nCodebase description:\n" + f.read()
+                prompt: str = "\n<project_rules>\n" + f.read() + "\n</project_rules>\n"
         except FileNotFoundError:
             prompt = ""
         return prompt
