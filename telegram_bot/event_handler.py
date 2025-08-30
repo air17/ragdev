@@ -1,3 +1,4 @@
+import asyncio
 import logging
 
 from aiogram import Router
@@ -24,6 +25,8 @@ from telegram_bot.db import (
     ChatSession,
     User,
 )
+
+MAX_MESSAGE_LENGTH: int = 4096  # Telegram message length limit
 
 
 class BotEventHandler:
@@ -667,7 +670,12 @@ class BotEventHandler:
             )
 
             # Send the response
-            await message.answer(response, parse_mode=None)
+            # Split long messages into chunks
+            while response:
+                chunk = response[:MAX_MESSAGE_LENGTH]
+                response = response[MAX_MESSAGE_LENGTH:]
+                await message.answer(chunk, parse_mode=None)
+                await asyncio.sleep(0.1)  # Slight delay to avoid hitting rate limits
 
         except Exception as e:
             self.logger.error(f"Error handling chat message: {e}", exc_info=True)
