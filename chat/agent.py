@@ -1,6 +1,6 @@
 import json
 import os
-from typing import TypedDict
+from typing import TypedDict, Generator
 
 from openai import OpenAI
 from openai.types.chat import (
@@ -209,7 +209,14 @@ class ChatAgent:
             project_tree=ls(self.project_dir), project_prompt=self._get_project_prompt()
         )
 
-    def get_deepseek_response_text(self, user_question: str) -> str:
+    def get_deepseek_response_text(
+        self, user_question: str
+    ) -> Generator[tuple[str, str], None, None]:
+        """
+        Interact with Deepseek's chat completion API to get a response to the user question, handling tool calls as needed.
+        Yields tuples of (response_text, status), where status is 'partial' for intermediate responses
+        and 'final' for the final response.
+        """
         if not self.messages:
             self._append_message(
                 ChatCompletionSystemMessageParam(
@@ -229,6 +236,9 @@ class ChatAgent:
                 f"ASSISTANT_OUTPUT: {new_assistant_message.content}\nTOOL_CALLS: {new_assistant_message.tool_calls}"
             )
             if new_assistant_message.tool_calls:
+                # Yield the assistant's output before processing tool calls
+                if new_assistant_message.content:
+                    yield new_assistant_message.content, "partial"
                 iterations += 1
                 if iterations > self.max_iterations:
                     self._append_message(
@@ -237,14 +247,16 @@ class ChatAgent:
                             role="system",
                         )
                     )
-                    self._append_message(
+                    final_response: ChatCompletionMessage = (
                         self.deepseek.chat.completions.create(
                             model=self.model, messages=self.messages, tools=self.tools
                         )
                         .choices[0]
                         .message
                     )
-                    return self.messages[-1].content
+                    self._append_message(final_response)
+                    yield final_response.content, "final"
+                    return
 
                 self._append_message(
                     ChatCompletionAssistantMessageParam(
@@ -270,15 +282,17 @@ class ChatAgent:
                         )
                     )
             else:
+                # No tool calls, yield the response if it has content and return it
                 response_text: str = new_assistant_message.content
-                return response_text
+                yield response_text, "final"
+                return
 
-    def run(self, user_question: str) -> str:
+    def run(self, user_question: str) -> Generator[tuple[str, str], None, None]:
         if "deepseek" in self.model:
-            response_text = self.get_deepseek_response_text(user_question)
+            for output in self.get_deepseek_response_text(user_question):
+                yield output
         else:
             raise ValueError(f"Unsupported model: {self.model}")
-        return response_text
 
     def dispatch_tool_call(self, tool, args):
         try:

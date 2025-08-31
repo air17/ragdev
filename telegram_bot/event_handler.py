@@ -666,13 +666,23 @@ class BotEventHandler:
             await message.bot.send_chat_action(chat_id=user_id, action="typing")
 
             # Process the message and get response
-            response: str = agent.run(message.text)
+            response: str = ""
+            for output, response_type in agent.run(message.text):
+                if response_type == "partial":
+                    await message.answer(
+                        output, parse_mode=None, disable_notification=True
+                    )
+                    await message.bot.send_chat_action(chat_id=user_id, action="typing")
+                else:
+                    response = output
 
             await self.db.update_chat_session_activity(
                 user.current_session_id, len(agent.messages)
             )
 
-            # Send the response
+            await message.answer("<i>Formatting response...</i>", parse_mode="HTML")
+            await message.bot.send_chat_action(chat_id=user_id, action="typing")
+
             # Split long messages into chunks
             while response:
                 chunk: str = response[:MAX_MESSAGE_LENGTH]
