@@ -59,9 +59,15 @@ Please cite code when it is helpful to point to some lines of code in the codeba
 
 You can cite code via the format:
 
-```filepath:start_line
+filepath:start_line-end_line
+```
 // ... existing code ...
 ```
+
+Add the MD formatted link to the gitlab repo if it is provided in <project_rules> as link_to_gitlab_repo.
+For example, if you cite a function defined in `app/components/Card.tsx` on lines 10-25, you would respond with:
+(app/components/Card.tsx:10-25)[https://gitlab.jetlend.ru/backend/business-web/-/blob/master/app/components/Card.tsx#L10-25]
+It must be before each code block.
 
 The code block should contain the code content from the file, although you are allowed to truncate the code or add comments for readability.
 If you do truncate the code, include a comment to indicate that there is more code that is not shown.

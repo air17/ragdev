@@ -1,5 +1,6 @@
 aiogram
 aiosqlite
+bleach
 GitPython
 google-genai
 langchain

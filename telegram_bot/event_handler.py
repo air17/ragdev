@@ -25,8 +25,11 @@ from telegram_bot.db import (
     ChatSession,
     User,
 )
+from telegram_bot.utils import markdown_to_telegram_html_ai
 
-MAX_MESSAGE_LENGTH: int = 4096  # Telegram message length limit
+MAX_MESSAGE_LENGTH: int = (
+    4096 - 500
+)  # Telegram message length limit, with buffer for html tags
 
 
 class BotEventHandler:
@@ -672,9 +675,13 @@ class BotEventHandler:
             # Send the response
             # Split long messages into chunks
             while response:
-                chunk = response[:MAX_MESSAGE_LENGTH]
+                chunk: str = response[:MAX_MESSAGE_LENGTH]
                 response = response[MAX_MESSAGE_LENGTH:]
-                await message.answer(chunk, parse_mode=None)
+                await message.answer(
+                    markdown_to_telegram_html_ai(chunk),
+                    parse_mode="HTML",
+                    disable_web_page_preview=True,
+                )
                 await asyncio.sleep(0.1)  # Slight delay to avoid hitting rate limits
 
         except Exception as e:
