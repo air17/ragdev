@@ -41,7 +41,7 @@ USER_HELP = (
     "/my_chats - List all the chat sessions\n"
     "/list_branches - List all branches\n"
     "/current_branch - Current branch\n"
-    "/fetch_current_branch - Fetch current branch\n"
+    "/pull_current_branch - Pull current branch\n"
     "/switch_branch <branch_name> - Switch to a specific branch\n"
 )
 HELP_ERROR = "❌ Error retrieving help message. Please try again later."

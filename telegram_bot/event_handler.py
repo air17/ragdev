@@ -14,7 +14,7 @@ from project_management.git_utils import (
     get_all_branches,
     switch_branch,
     get_current_branch,
-    fetch_current_branch,
+    pull_current_branch,
 )
 from telegram_bot import const
 from telegram_bot.const import BotConstants
@@ -61,7 +61,7 @@ class BotEventHandler:
             self.handle_current_branch_command, Command("current_branch")
         )
         self.router.message.register(
-            self.handle_fetch_current_branch_command, Command("fetch_current_branch")
+            self.handle_pull_current_branch_command, Command("pull_current_branch")
         )
         self.router.message.register(
             self.handle_switch_branch_command, Command("switch_branch")
@@ -737,15 +737,15 @@ class BotEventHandler:
             )
             await message.answer("Current branch command error: " + str(e))
 
-    async def handle_fetch_current_branch_command(self, message: Message):
+    async def handle_pull_current_branch_command(self, message: Message):
         try:
-            fetch_current_branch(config.DEFAULT_COLLECTION_NAME, self.git_repo_path)
-            await message.answer("Current branch fetched.")
+            pull_current_branch(config.DEFAULT_COLLECTION_NAME, self.git_repo_path)
+            await message.answer("Current branch pulled.")
         except Exception as e:
             self.logger.error(
-                f"Error handling fetch current branch command: {e}", exc_info=True
+                f"Error handling pull current branch command: {e}", exc_info=True
             )
-            await message.answer("Fetch current branch command error: " + str(e))
+            await message.answer("pull current branch command error: " + str(e))
 
     # ==================== CALLBACK HANDLERS ====================
 

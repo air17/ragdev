@@ -39,7 +39,7 @@ def switch_submodules_to_branch(repo_dir: str, new_branch_name: str) -> set[str]
             )
         except Exception as e:
             print(
-                f"Warning: Failed to fetch repository in submodule {submodule_name}: {e}"
+                f"Warning: Failed to pull repository in submodule {submodule_name}: {e}"
             )
     return changed_files
 
@@ -94,13 +94,13 @@ def switch_branch(collection_name: str, repo_dir: str, new_branch_name: str) -> 
     reindex_files(collection_name, all_changed_files, repo_dir)
 
 
-def fetch_repository(repo: Repo, path_prefix: str) -> tuple[Commit, Commit, str]:
-    """Fetch repository and return old and new remote commits."""
+def pull_repository(repo: Repo, path_prefix: str) -> tuple[Commit, Commit, str]:
+    """Pull repository and return old and new remote commits."""
     remote_name: str = repo.remotes[0].name
     current_branch: str = repo.active_branch.name
 
     old_remote_commit: Commit = repo.remotes[remote_name].refs[current_branch].commit
-    repo.git.fetch("--all", "--prune")
+    repo.git.pull("--all", "--prune")
     new_remote_commit: Commit = repo.remotes[remote_name].refs[current_branch].commit
 
     return old_remote_commit, new_remote_commit, path_prefix
@@ -114,8 +114,8 @@ def get_changed_files(
     return {f"{path_prefix}{d.a_path or d.b_path}" for d in diff_index}
 
 
-def fetch_submodules(repo_dir: str) -> list[tuple[Commit, Commit, str]]:
-    """Fetch all submodules in the repository."""
+def pull_submodules(repo_dir: str) -> list[tuple[Commit, Commit, str]]:
+    """Pull all submodules in the repository."""
     try:
         with open(repo_dir + "/" + PROJECT_SUBMODULES_FILE_NAME, "r") as f:
             submodule_names: list[str] = [
@@ -130,17 +130,17 @@ def fetch_submodules(repo_dir: str) -> list[tuple[Commit, Commit, str]]:
     for submodule_name in submodule_names:
         try:
             repo: Repo = Repo(repo_dir + "/" + submodule_name)
-            old_new_commits.append(fetch_repository(repo, f"{submodule_name}/"))
+            old_new_commits.append(pull_repository(repo, f"{submodule_name}/"))
         except Exception as e:
             print(
-                f"Warning: Failed to fetch repository in submodule {submodule_name}: {e}"
+                f"Warning: Failed to pull repository in submodule {submodule_name}: {e}"
             )
     return old_new_commits
 
 
-def fetch_current_branch(collection_name: str, repo_dir: str) -> None:
+def pull_current_branch(collection_name: str, repo_dir: str) -> None:
     """
-    Fetch the current branch and all submodules, then reindex changed files.
+    Pull the current branch and all submodules, then reindex changed files.
 
     Args:
         collection_name: Name of the collection to reindex
@@ -148,11 +148,11 @@ def fetch_current_branch(collection_name: str, repo_dir: str) -> None:
     """
     repo: Repo = Repo(repo_dir)
 
-    # Fetch main repository and get changed commits
-    old_new_commits: list[tuple[Commit, Commit, str]] = [fetch_repository(repo, "")]
+    # Pull main repository and get changed commits
+    old_new_commits: list[tuple[Commit, Commit, str]] = [pull_repository(repo, "")]
 
-    # Fetch all submodules
-    old_new_commits.extend(fetch_submodules(repo_dir))
+    # Pull all submodules
+    old_new_commits.extend(pull_submodules(repo_dir))
 
     # Get all changed files from main repo and submodules
     all_changed_files: set[str] = set()

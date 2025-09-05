@@ -7,10 +7,10 @@ from project_management.git_utils import (
     switch_submodules_to_branch,
     get_repo_changed_files_for_switch,
     switch_branch,
-    fetch_repository,
+    pull_repository,
     get_changed_files,
-    fetch_submodules,
-    fetch_current_branch,
+    pull_submodules,
+    pull_current_branch,
     get_current_branch,
     get_all_branches,
 )
@@ -165,8 +165,8 @@ class TestSwitchBranch:
         mock_reindex.assert_not_called()
 
 
-class TestFetchRepository:
-    def test_fetch_repository_success(self):
+class TestPullRepository:
+    def test_pull_repository_success(self):
         # Arrange
         mock_repo = Mock()
 
@@ -197,22 +197,22 @@ class TestFetchRepository:
         mock_refs.__getitem__ = Mock(return_value=mock_ref)
         mock_remote.refs = mock_refs
 
-        # Mock git fetch and change commit after fetch
-        def mock_fetch(*args):
-            mock_ref.commit = new_commit  # Change commit after fetch
+        # Mock git pull and change commit after pull
+        def mock_pull(*args):
+            mock_ref.commit = new_commit  # Change commit after pull
 
         mock_repo.git = Mock()
-        mock_repo.git.fetch.side_effect = mock_fetch
+        mock_repo.git.pull.side_effect = mock_pull
 
         # Act
-        result = fetch_repository(mock_repo, "")
+        result = pull_repository(mock_repo, "")
 
         # Assert
         assert isinstance(result, tuple)
         assert len(result) == 3
         assert result[0] == old_commit
         assert result[1] == new_commit
-        mock_repo.git.fetch.assert_called_once_with("--all", "--prune")
+        mock_repo.git.pull.assert_called_once_with("--all", "--prune")
 
 
 class TestGetChangedFiles:
@@ -233,81 +233,81 @@ class TestGetChangedFiles:
         assert result == {"file1.py"}
 
 
-class TestFetchSubmodules:
+class TestPullSubmodules:
     @patch("builtins.open", mock_open(read_data="submodule1\nsubmodule2\n"))
     @patch("project_management.git_utils.Repo")
-    @patch("project_management.git_utils.fetch_repository")
-    def test_fetch_submodules_success(self, mock_fetch_repo, mock_repo_class):
+    @patch("project_management.git_utils.pull_repository")
+    def test_pull_submodules_success(self, mock_pull_repo, mock_repo_class):
         # Arrange
-        mock_fetch_repo.return_value = (Mock(), Mock())
-        mock_fetch_repo.return_value = (Mock(), Mock(), "")  # Added third parameter
+        mock_pull_repo.return_value = (Mock(), Mock())
+        mock_pull_repo.return_value = (Mock(), Mock(), "")  # Added third parameter
         # Act
-        result = fetch_submodules("/repo")
+        result = pull_submodules("/repo")
 
         # Assert
         assert isinstance(result, list)
         assert len(result) == 2
-        assert mock_fetch_repo.call_count == 2
+        assert mock_pull_repo.call_count == 2
 
     @patch("builtins.open", side_effect=FileNotFoundError)
-    def test_fetch_submodules_no_file(self, mock_open):
+    def test_pull_submodules_no_file(self, mock_open):
         # Act
-        result = fetch_submodules("/repo")
+        result = pull_submodules("/repo")
 
         # Assert
         assert result == []
 
 
-class TestFetchCurrentBranch:
+class TestPullCurrentBranch:
     @patch("project_management.git_utils.reindex_files")
-    @patch("project_management.git_utils.fetch_submodules")
-    @patch("project_management.git_utils.fetch_repository")
+    @patch("project_management.git_utils.pull_submodules")
+    @patch("project_management.git_utils.pull_repository")
     @patch("project_management.git_utils.get_changed_files")
     @patch("project_management.git_utils.Repo")
-    def test_fetch_current_branch_with_changes(
+    def test_pull_current_branch_with_changes(
         self,
         mock_repo_class,
         mock_get_changed_files,
-        mock_fetch_repo,
-        mock_fetch_submodules,
+        mock_pull_repo,
+        mock_pull_submodules,
         mock_reindex,
     ):
         # Arrange
         mock_repo = Mock()
         mock_repo_class.return_value = mock_repo
-        mock_fetch_repo.return_value = (Mock(), Mock())
-        mock_fetch_repo.return_value = (Mock(), Mock(), "")  # Added third parameter
-        mock_fetch_submodules.return_value = [
+        mock_pull_repo.return_value = (Mock(), Mock())
+        mock_pull_repo.return_value = (Mock(), Mock(), "")  # Added third parameter
+        mock_pull_submodules.return_value = [
             (Mock(), Mock(), "sub1/")
         ]  # Added third parameter
 
         # Act
-        fetch_current_branch("collection", "/repo")
+        pull_current_branch("collection", "/repo")
 
         # Assert
         mock_reindex.assert_called_once()
 
-    @patch("project_management.git_utils.fetch_submodules")
-    @patch("project_management.git_utils.fetch_repository")
+    @patch("project_management.git_utils.pull_submodules")
+    @patch("project_management.git_utils.pull_repository")
     @patch("project_management.git_utils.get_changed_files")
     @patch("project_management.git_utils.Repo")
-    def test_fetch_current_branch_no_changes(
+    def test_pull_current_branch_no_changes(
         self,
         mock_repo_class,
         mock_get_changed_files,
-        mock_fetch_repo,
-        mock_fetch_submodules,
+        mock_pull_repo,
+        mock_pull_submodules,
         capsys,
     ):
         # Arrange
         mock_repo = Mock()
         mock_repo_class.return_value = mock_repo
-        mock_fetch_repo.return_value = (Mock(), Mock())
-        mock_fetch_repo.return_value = (Mock(), Mock(), "")  # Added third parameter
+        mock_pull_repo.return_value = (Mock(), Mock())
+        mock_pull_repo.return_value = (Mock(), Mock(), "")  # Added third parameter
         mock_get_changed_files.return_value = set()
 
         # Act
-        fetch_current_branch("collection", "/repo")
+        pull_current_branch("collection", "/repo")
 
         # Assert
         captured = capsys.readouterr()
