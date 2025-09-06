@@ -40,7 +40,7 @@ class ChatAgent:
         project_dir: str = DEFAULT_PROJECT_DIR,
         collection_name: str = DEFAULT_COLLECTION_NAME,
         api_key: str = DEEPSEEK_API_KEY,
-        model: str = "deepseek-reasoner",
+        model: str = "deepseek-chat",
         max_iterations: int = 15,
         session_manager: ChatSessionManager | None = None,
     ) -> None:
