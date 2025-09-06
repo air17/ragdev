@@ -47,4 +47,3 @@ class TestConfig:
 
             # Check that variables match environment
             assert config.MILVUS_ENDPOINT == test_endpoint
-            assert config.DEFAULT_COLLECTION_NAME == test_collection

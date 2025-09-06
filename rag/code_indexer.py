@@ -2,7 +2,6 @@ import os
 import json
 from pathlib import Path
 
-from config import DEFAULT_COLLECTION_NAME
 from agent_tools.read_file import read_file
 from .chunker import chunk_file
 from .embeddings import EmbeddingManager
@@ -190,8 +189,8 @@ def process_file(
 
 
 def index(
-    directory: str = ".",
-    collection_name: str = DEFAULT_COLLECTION_NAME,
+    directory: str,
+    collection_name: str,
     resume: bool = True,
     dir_exclusions: tuple[str, ...] = DEFAULT_DIR_EXCLUSIONS,
     dir_within_parent_exclusions: tuple[

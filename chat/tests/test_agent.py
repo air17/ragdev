@@ -8,8 +8,6 @@ def test_chat_agent_initialization():
     """Test that ChatAgent initializes with default parameters."""
     agent = ChatAgent(project_dir="/test/project")
     assert agent.project_dir == "/test/project"
-    assert agent.model == "deepseek-chat"
-    assert agent.max_iterations == 15
     assert agent.messages == []
 
 

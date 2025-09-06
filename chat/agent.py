@@ -24,10 +24,8 @@ from agent_tools.read_file import (
 from chat.const import SYSTEM_PROMPT
 from chat.sessions import ChatSessionManager
 from config import (
-    DEFAULT_COLLECTION_NAME,
     DEEPSEEK_BASE_URL,
     DEEPSEEK_API_KEY,
-    DEFAULT_PROJECT_DIR,
 )
 from rag.embeddings import EmbeddingManager
 from rag.reranker import rerank_results
@@ -37,11 +35,11 @@ from rag.snippet_reader import read_snippets
 class ChatAgent:
     def __init__(
         self,
-        project_dir: str = DEFAULT_PROJECT_DIR,
-        collection_name: str = DEFAULT_COLLECTION_NAME,
+        project_dir: str,
+        collection_name: str | None = None,
         api_key: str = DEEPSEEK_API_KEY,
         model: str = "deepseek-chat",
-        max_iterations: int = 15,
+        max_iterations: int = 10,
         session_manager: ChatSessionManager | None = None,
     ) -> None:
         # session is optional; if provided, messages are loaded from it and persisted there
@@ -54,30 +52,13 @@ class ChatAgent:
         self.deepseek: OpenAI = OpenAI(api_key=api_key, base_url=DEEPSEEK_BASE_URL)
         self.model: str = model
         self.project_dir: str = project_dir
-        self.embedding_manager = EmbeddingManager(collection_name=collection_name)
+        self.embedding_manager = (
+            EmbeddingManager(collection_name=collection_name)
+            if collection_name
+            else None
+        )
 
-        self.tools: tuple[ChatCompletionToolParam, ...] = (
-            ChatCompletionToolParam(
-                type="function",
-                function=FunctionDefinition(
-                    name="semantic_search",
-                    description="Find snippets of code from the codebase most relevant to the search query.\\nThis is a semantic search tool, so the query should ask for something semantically matching what is needed.\\nIf it makes sense to only search in particular directories, please specify them in the target_directories field.\\nUnless there is a clear reason to use your own search query, please just reuse the user's exact query with their wording.\\nTheir exact wording/phrasing can often be helpful for the semantic search query. Keeping the same exact question format can also be helpful.",
-                    parameters={
-                        "type": "object",
-                        "required": ["question"],
-                        "properties": {
-                            "question": {
-                                "type": "string",
-                                "description": "The search query to find relevant code.",
-                            },
-                            "dir_path": {
-                                "type": "string",
-                                "description": "The directory to search over (optional).",
-                            },
-                        },
-                    },
-                ),
-            ),
+        self.tools: list[ChatCompletionToolParam] = [
             ChatCompletionToolParam(
                 type="function",
                 function=FunctionDefinition(
@@ -204,7 +185,31 @@ class ChatAgent:
                     },
                 ),
             ),
-        )
+        ]
+        if self.embedding_manager is not None:
+            self.tools.append(
+                ChatCompletionToolParam(
+                    type="function",
+                    function=FunctionDefinition(
+                        name="semantic_search",
+                        description="Find snippets of code from the codebase most relevant to the search query.\\nThis is a semantic search tool, so the query should ask for something semantically matching what is needed.\\nIf it makes sense to only search in particular directories, please specify them in the target_directories field.\\nUnless there is a clear reason to use your own search query, please just reuse the user's exact query with their wording.\\nTheir exact wording/phrasing can often be helpful for the semantic search query. Keeping the same exact question format can also be helpful.",
+                        parameters={
+                            "type": "object",
+                            "required": ["question"],
+                            "properties": {
+                                "question": {
+                                    "type": "string",
+                                    "description": "The search query to find relevant code.",
+                                },
+                                "dir_path": {
+                                    "type": "string",
+                                    "description": "The directory to search over (optional).",
+                                },
+                            },
+                        },
+                    ),
+                ),
+            )
         self.system_prompt = SYSTEM_PROMPT.format(
             project_tree=ls(self.project_dir), project_prompt=self._get_project_prompt()
         )
@@ -294,9 +299,11 @@ class ChatAgent:
         else:
             raise ValueError(f"Unsupported model: {self.model}")
 
-    def dispatch_tool_call(self, tool, args):
+    def dispatch_tool_call(self, tool, args) -> str:
         try:
             if tool == "semantic_search":
+                if not self.embedding_manager:
+                    return "semantic_search tool is not available for this project. Don't use it."
                 vector_results = rerank_results(
                     args["question"],
                     read_snippets(

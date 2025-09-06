@@ -40,4 +40,4 @@ def test_index_exists():
         mock_manager.create_collection_if_not_exists.return_value = True
 
         # Call with minimal arguments to verify it doesn't throw exceptions
-        index()
+        index(directory="some/dir", collection_name="test_collection")

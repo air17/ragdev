@@ -8,7 +8,6 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import Message, CallbackQuery
 
-import config
 from chat.agent import ChatAgent
 from chat.sessions import ChatSessionManager
 from project_management.const import PROJECTS, ProjectInfo
@@ -30,18 +29,18 @@ from telegram_bot.db import (
 from telegram_bot.utils import markdown_to_telegram_html_ai, remove_non_telegram_html
 
 MAX_MESSAGE_LENGTH: int = (
-    4096 - 500
-)  # Telegram message length limit, with buffer for html tags
+    4096  # Telegram message length limit, with buffer for html tags
+)
 
 
 class BotEventHandler:
     """Example class showing database method calls for different Telegram events"""
 
+    router: Router = Router()
+
     def __init__(self, db: AsyncUserDatabase):
         self.db: AsyncUserDatabase = db
-        self.router: Router = Router()
         self.logger = logging.getLogger(self.__class__.__name__)
-        self.git_repo_path = config.DEFAULT_PROJECT_DIR
         self.setup_handlers()
 
     def setup_handlers(self):
@@ -567,7 +566,7 @@ class BotEventHandler:
         try:
             user: User | None = await self.db.get_user(message.from_user.id)
             if not user or not user.current_session_id:
-                await message.answer("You don't have an active chat session to end.")
+                await message.answer(const.NO_ACTIVE_CHAT)
                 return
 
             # Clear user's current session
@@ -575,7 +574,7 @@ class BotEventHandler:
                 user_id=message.from_user.id, current_session_id=None
             )
 
-            await message.answer("Your current chat session has been ended.")
+            await message.answer(const.CHAT_ENDED_MESSAGE)
 
             # Reset FSM state
             await state.set_state()
@@ -686,10 +685,7 @@ class BotEventHandler:
             # Check for active session
             user: User = await self.db.get_user(user_id)
             if not user or not user.current_session_id:
-                await message.answer(
-                    "You don't have an active chat session. "
-                    "Use /chat to start a new conversation or /help for more commands."
-                )
+                await message.answer(const.NO_ACTIVE_CHAT)
                 return
 
             # Log user activity
@@ -743,13 +739,17 @@ class BotEventHandler:
                 user.current_session_id, len(agent.messages)
             )
 
-            await message.answer("<i>Formatting response...</i>", parse_mode="HTML")
+            await message.answer(
+                "<i>Formatting response...</i>",
+                parse_mode="HTML",
+                disable_notification=True,
+            )
             await message.bot.send_chat_action(chat_id=user_id, action="typing")
 
             # Split long messages into chunks
             while response:
-                chunk: str = response[:MAX_MESSAGE_LENGTH]
-                response = response[MAX_MESSAGE_LENGTH:]
+                chunk: str = response[: MAX_MESSAGE_LENGTH - 400]
+                response = response[MAX_MESSAGE_LENGTH - 400 :]
                 await message.answer(
                     markdown_to_telegram_html_ai(chunk),
                     parse_mode="HTML",
@@ -763,13 +763,39 @@ class BotEventHandler:
                 "Sorry, I encountered an error processing your message. Please try again later."
             )
 
-    # Git commands
-
-    async def handle_list_branches_command(self, message: Message):
+    async def get_current_session_manager(
+        self, user_id: int
+    ) -> ChatSessionManager | None:
+        """Helper to get current session manager for a user"""
         try:
-            await message.answer(
-                "List of branches: " + "\n".join(get_all_branches(self.git_repo_path))
+            user: User | None = await self.db.get_user(user_id)
+            if not user or not user.current_session_id:
+                return None
+            try:
+                return ChatSessionManager(session_id=user.current_session_id)
+            except FileNotFoundError:
+                await self.db.update_user(user_id=user_id, current_session_id=None)
+                return None
+        except Exception as e:
+            self.logger.error(f"Database error getting session manager: {e}")
+            return None
+
+    # Git commands
+    async def handle_list_branches_command(self, message: Message):
+        session_manager: (
+            ChatSessionManager | None
+        ) = await self.get_current_session_manager(message.from_user.id)
+        if not session_manager:
+            return await message.answer(const.NO_ACTIVE_CHAT)
+        try:
+            response: str = "List of branches: " + "\n".join(
+                get_all_branches(session_manager.project_dir)
             )
+            while response:
+                chunk: str = response[:MAX_MESSAGE_LENGTH]
+                response = response[MAX_MESSAGE_LENGTH:]
+                await message.answer(chunk, parse_mode=None)
+                await asyncio.sleep(0.1)
         except Exception as e:
             self.logger.error(
                 f"Error handling list branches command: {e}", exc_info=True
@@ -777,10 +803,17 @@ class BotEventHandler:
             await message.answer("List branches command error: " + str(e))
 
     async def handle_switch_branch_command(self, message: Message):
+        session_manager: (
+            ChatSessionManager | None
+        ) = await self.get_current_session_manager(message.from_user.id)
+        if not session_manager:
+            return await message.answer(const.NO_ACTIVE_CHAT)
         try:
             new_branch_name = message.text.split(" ")[1]
             switch_branch(
-                config.DEFAULT_COLLECTION_NAME, self.git_repo_path, new_branch_name
+                session_manager.collection_name,
+                session_manager.project_dir,
+                new_branch_name,
             )
             await self.handle_current_branch_command(message)
         except Exception as e:
@@ -790,9 +823,14 @@ class BotEventHandler:
             await message.answer("Switch branch command error: " + str(e))
 
     async def handle_current_branch_command(self, message: Message):
+        session_manager: (
+            ChatSessionManager | None
+        ) = await self.get_current_session_manager(message.from_user.id)
+        if not session_manager:
+            return await message.answer(const.NO_ACTIVE_CHAT)
         try:
             await message.answer(
-                "Current branch:\n" + get_current_branch(self.git_repo_path)
+                "Current branch:\n" + get_current_branch(session_manager.project_dir)
             )
         except Exception as e:
             self.logger.error(
@@ -801,8 +839,15 @@ class BotEventHandler:
             await message.answer("Current branch command error: " + str(e))
 
     async def handle_pull_current_branch_command(self, message: Message):
+        session_manager: (
+            ChatSessionManager | None
+        ) = await self.get_current_session_manager(message.from_user.id)
+        if not session_manager:
+            return await message.answer(const.NO_ACTIVE_CHAT)
         try:
-            pull_current_branch(config.DEFAULT_COLLECTION_NAME, self.git_repo_path)
+            pull_current_branch(
+                session_manager.collection_name, session_manager.project_dir
+            )
             await message.answer("Current branch pulled.")
         except Exception as e:
             self.logger.error(

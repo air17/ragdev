@@ -77,6 +77,10 @@ def switch_branch(collection_name: str, repo_dir: str, new_branch_name: str) -> 
     # Switch main repository
     repo.git.checkout(new_branch_name)
 
+    if not collection_name:
+        print("No collection name provided. Skipping reindexing.")
+        return
+
     # Get all changed files from main repo
     all_changed_files: set[str] = get_repo_changed_files_for_switch(
         repo, current_branch, new_branch_name
@@ -153,6 +157,10 @@ def pull_current_branch(collection_name: str, repo_dir: str) -> None:
 
     # Pull all submodules
     old_new_commits.extend(pull_submodules(repo_dir))
+
+    if not collection_name:
+        print("No collection name provided. Skipping reindexing.")
+        return
 
     # Get all changed files from main repo and submodules
     all_changed_files: set[str] = set()

@@ -104,3 +104,7 @@ SETTINGS_ERROR = "❌ Unable to access settings at the moment."
 REQUEST_ERROR = (
     "🐞 An error occurred while processing your request. Please try again later."
 )
+NO_ACTIVE_CHAT = (
+    "❓ You don't have an active chat session. Use /start to start a new conversation."
+)
+CHAT_ENDED_MESSAGE = "✅ Your current chat session has been ended."

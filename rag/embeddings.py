@@ -9,7 +9,6 @@ from config import (
     MILVUS_ENDPOINT,
     MILVUS_TOKEN,
     GEMINI_API_KEY,
-    DEFAULT_COLLECTION_NAME,
 )
 
 RETRIEVAL_DOCUMENT_TASK_TYPE = "RETRIEVAL_DOCUMENT"
@@ -61,10 +60,10 @@ class MilvusSearchResult(TypedDict):
 class EmbeddingManager:
     def __init__(
         self,
+        collection_name: str,
         milvus_endpoint: str = MILVUS_ENDPOINT,
         milvus_token: str = MILVUS_TOKEN,
         gemini_api_key: str = GEMINI_API_KEY,
-        collection_name: str = DEFAULT_COLLECTION_NAME,
         vector_dimension: int = DEFAULT_VECTOR_DIMENSION,
     ):
         """

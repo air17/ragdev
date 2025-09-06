@@ -6,7 +6,7 @@ import config
 class ProjectInfo(TypedDict):
     name: str
     project_dir: str
-    collection_name: str
+    collection_name: str | None
 
 
 PROJECTS: dict[str, ProjectInfo] = {
