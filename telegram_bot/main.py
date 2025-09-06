@@ -1,6 +1,7 @@
 import asyncio
 
 from aiogram import Bot, Dispatcher
+from aiogram.types import BotCommand
 
 import config
 from telegram_bot.const import BotConstants
@@ -30,6 +31,20 @@ async def setup_production_bot():
     # Setup event handlers
     event_handler = BotEventHandler(db)
     dp.include_router(event_handler.router)
+
+    # Setup all available commands
+    all_commands: list[BotCommand] = [
+        BotCommand(command="/start", description="Start a new chat session"),
+        BotCommand(command="/help", description="Show help information"),
+        BotCommand(command="/my_chats", description="List all your chat sessions"),
+        BotCommand(command="/end_chat", description="End the current chat session"),
+        BotCommand(command="/list_branches", description="List all branches"),
+        BotCommand(command="/current_branch", description="Show current branch"),
+        BotCommand(command="/pull_current_branch", description="Pull current branch"),
+        BotCommand(command="/settings", description="Your settings"),
+        BotCommand(command="/admin", description="Admin panel"),
+    ]
+    await bot.set_my_commands(all_commands)
 
     # Setup graceful shutdown
     async def on_shutdown():
