@@ -35,7 +35,7 @@ class TestConfig:
                 "MILVUS_ENDPOINT": test_endpoint,
                 "MILVUS_TOKEN": "test-token",
                 "GEMINI_API_KEY": "test-key",
-                "DEFAULT_COLLECTION_NAME": test_collection,
+                "BUSINESS_WEB_COLLECTION_NAME": test_collection,
                 "USAGES_INDEX_FILE": "test-index.json",
             },
         ):
