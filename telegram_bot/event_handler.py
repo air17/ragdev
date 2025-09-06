@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from datetime import datetime
 
 from aiogram import Router
 from aiogram.filters import CommandStart, Command
@@ -10,6 +11,7 @@ from aiogram.types import Message, CallbackQuery
 import config
 from chat.agent import ChatAgent
 from chat.sessions import ChatSessionManager
+from project_management.const import PROJECTS, ProjectInfo
 from project_management.git_utils import (
     get_all_branches,
     switch_branch,
@@ -25,7 +27,7 @@ from telegram_bot.db import (
     ChatSession,
     User,
 )
-from telegram_bot.utils import markdown_to_telegram_html_ai
+from telegram_bot.utils import markdown_to_telegram_html_ai, remove_non_telegram_html
 
 MAX_MESSAGE_LENGTH: int = (
     4096 - 500
@@ -73,8 +75,11 @@ class BotEventHandler:
         )
 
         # Chat command handlers
-        self.router.message.register(self.handle_chat_command, Command("chat"))
+        self.router.message.register(
+            self.handle_select_project_command, Command(commands=list(PROJECTS.keys()))
+        )
         self.router.message.register(self.handle_my_chats_command, Command("my_chats"))
+        self.router.message.register(self.handle_end_chat_command, Command("end_chat"))
 
         # General message handler (should be last)
         self.router.message.register(self.handle_chat_message)
@@ -467,7 +472,7 @@ class BotEventHandler:
             await message.answer(const.SETTINGS_ERROR)
 
     async def handle_chat_command(self, message: Message, state: FSMContext):
-        """Handle /chat command to start a new chat session"""
+        """Handle /chat <name> command to join an existing chat session"""
         try:
             # Get the session name from command arguments or use user's first name
             session_name: str | None = (
@@ -475,44 +480,31 @@ class BotEventHandler:
                 if len(message.text.split()) > 1
                 else None
             )
-            if not session_name or len(session_name) > 100:
-                session_name = None
+            if not session_name:
+                return await message.answer(
+                    "Please provide a valid session name (1-100 characters)."
+                )
 
             # Sanitize the session name
             if session_name and any(char in session_name for char in ["<", ">", "&"]):
-                await message.answer(
+                return await message.answer(
                     "Session name cannot contain <, >, or & characters."
                 )
-                return
 
             # Check if a session with this name already exists for the user
-            existing_session: ChatSession | None = None
-            if session_name:
-                sessions = await self.db.list_chat_sessions(
-                    user_id=message.from_user.id
-                )
-                existing_session = next(
-                    (s for s in sessions if s.name == session_name), None
-                )
+            sessions = await self.db.list_chat_sessions(user_id=message.from_user.id)
+            existing_session = next(
+                (s for s in sessions if s.name == session_name), None
+            )
 
             if existing_session:
                 # Switch to existing session
                 session_id = existing_session.session_id
-                await message.answer(
-                    f"Switched to the existing chat session: {session_name}"
-                )
+                await message.answer(f"Joined existing chat session: {session_name}")
             else:
-                # Create new session
-                session_id = ChatSessionManager().create_session(
-                    project_dir=config.DEFAULT_PROJECT_DIR,
-                    collection_name=config.DEFAULT_COLLECTION_NAME,
+                return await message.answer(
+                    f"No existing session named '{session_name}'. Please use /start to start a new chat."
                 )
-                await self.db.create_chat_session(
-                    user_id=message.from_user.id,
-                    session_id=session_id,
-                    name=session_name,
-                )
-                await message.answer("Created new chat session")
 
             # Update user's current session
             await self.db.update_user(
@@ -524,9 +516,73 @@ class BotEventHandler:
 
         except Exception as e:
             self.logger.error(f"Error in handle_chat_command: {e}")
-            await message.answer(
-                "An error occurred while processing your request. Please try again later."
+            await message.answer(const.REQUEST_ERROR)
+
+    async def handle_select_project_command(self, message: Message, state: FSMContext):
+        """Handle /project-name command to start a new chat session"""
+        try:
+            # Get the project name from command
+            project_name: str | None = message.text.lstrip("/").strip()
+            project_info: ProjectInfo = PROJECTS.get(project_name)
+            if not project_info:
+                return await message.answer(
+                    "Please provide a valid project name. Available projects:\n"
+                    + "\n".join(f"/{name}" for name in PROJECTS.keys())
+                )
+            # create a unique session name like "business_web_2025-10-05_14:31:23"
+            session_name: str = (
+                f"{project_name}_{datetime.now().strftime('%Y-%m-%d_%H:%M:%S')}"
             )
+
+            # Create new session
+            session_id = ChatSessionManager().create_session(
+                project_dir=project_info["project_dir"],
+                collection_name=project_info["collection_name"],
+            )
+            # save session to db
+            await self.db.create_chat_session(
+                user_id=message.from_user.id,
+                session_id=session_id,
+                name=session_name,
+            )
+            await message.answer(
+                f"Created new chat session for <b>{project_name}</b>.\nWrite your question:",
+                parse_mode="HTML",
+            )
+
+            # Update user's current session
+            await self.db.update_user(
+                user_id=message.from_user.id, current_session_id=session_id
+            )
+
+            # Reset FSM state to handle new chat messages
+            await state.set_state()
+
+        except Exception as e:
+            self.logger.error(f"Error in handle_chat_command: {e}")
+            await message.answer(const.REQUEST_ERROR)
+
+    async def handle_end_chat_command(self, message: Message, state: FSMContext):
+        """Handle /end_chat command to end the current chat session"""
+        try:
+            user: User | None = await self.db.get_user(message.from_user.id)
+            if not user or not user.current_session_id:
+                await message.answer("You don't have an active chat session to end.")
+                return
+
+            # Clear user's current session
+            await self.db.update_user(
+                user_id=message.from_user.id, current_session_id=None
+            )
+
+            await message.answer("Your current chat session has been ended.")
+
+            # Reset FSM state
+            await state.set_state()
+
+        except Exception as e:
+            self.logger.error(f"Error in handle_end_chat_command: {e}")
+            await message.answer(const.REQUEST_ERROR)
 
     async def handle_my_chats_command(self, message: Message, state: FSMContext):
         """Handle /my_chats command to list all chat sessions for the user"""
@@ -538,7 +594,7 @@ class BotEventHandler:
 
             if not sessions:
                 await message.answer(
-                    "You don't have any chat sessions yet. Use /chat to create one!"
+                    "You don't have any chat sessions yet. Use /start to create one!"
                 )
                 return
 
@@ -554,6 +610,9 @@ class BotEventHandler:
                 response.append(
                     f"{i}. <code>{session.name}</code>{last_active} - {session.message_count} messages"
                 )
+            if len(response) > 31:
+                response = response[:31]
+                response.append(f"... and {len(response) - 30} more sessions.")
 
             # Add current session indicator if any
             user = await self.db.get_user(message.from_user.id)
@@ -563,16 +622,20 @@ class BotEventHandler:
                     None,
                 )
                 if current_session:
-                    response.append(f"\n💬 Current session: {current_session.name}")
+                    response.append(f"\n💬 Current session: {current_session.name}.")
+
+            response.append(
+                "\nUse /chat (name) to join a session (just click a session name above to copy it)."
+            )
 
             # Send the response
-            await message.answer("\n".join(response), parse_mode="HTML")
+            await message.answer(
+                remove_non_telegram_html("\n".join(response)), parse_mode="HTML"
+            )
 
         except Exception as e:
             self.logger.error(f"Error listing chat sessions: {e}")
-            await message.answer(
-                "❌ An error occurred while fetching your chat sessions. Please try again later."
-            )
+            await message.answer(const.REQUEST_ERROR)
 
     # ==================== FSM STATE HANDLERS ====================
 

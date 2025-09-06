@@ -82,8 +82,17 @@ class DatabaseMiddleware(BaseMiddleware):
                         and hasattr(event.message, "answer")
                     ):
                         try:
+                            if (
+                                hasattr(event.message, "text")
+                                and event.message.text == "/start"
+                            ):
+                                # For /start commands, reply with a more detailed message
+                                await event.message.answer(
+                                    "⚠️Welcome! Your access to this bot is not approved yet.\n"
+                                    "Please contact the administrator for more information."
+                                )
                             await event.message.answer(
-                                "❌ Your access to this bot has been restricted."
+                                "❌ Your access to this bot is not approved."
                             )
                         except Exception:
                             self.logger.debug(

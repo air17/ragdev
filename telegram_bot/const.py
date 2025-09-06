@@ -1,3 +1,6 @@
+from project_management.const import PROJECTS
+
+
 class BotConstants:
     """Constants for bot operations"""
 
@@ -22,8 +25,13 @@ class BotConstants:
     DEFAULT_CLEANUP_DAYS = 90
 
 
-WELCOME_MESSAGE = "👋 Welcome {first_name}! I'm your bot assistant."
-REGISTRATION_ISSUE_MESSAGE = "⚠️ Welcome! There was an issue with registration."
+WELCOME_MESSAGE = (
+    "Choose a project to start a new chat:\n"
+    + "".join([f"/{key} - {info['name']}\n" for key, info in PROJECTS.items()])
+    + "\n"
+    "Use /help to see all available commands."
+)
+REGISTRATION_ISSUE_MESSAGE = "⚠️Welcome! There was an issue with registration."
 
 ADMIN_HELP = (
     "🔧 Admin Help:\n"
@@ -36,9 +44,12 @@ ADMIN_HELP = (
 USER_HELP = (
     "📚 User Help:\n"
     "/settings - Your settings\n"
-    "/help - This help message\n"
-    "/chat <name(optional)> - Start a new chat session or join an existing one\n"
+    "\n"
+    "/start - Start a new chat session\n"
     "/my_chats - List all the chat sessions\n"
+    "/chat <name> - Join an existing chat\n"
+    "/end_chat - End the current chat session\n"
+    "\n"
     "/list_branches - List all branches\n"
     "/current_branch - Current branch\n"
     "/pull_current_branch - Pull current branch\n"
@@ -89,3 +100,7 @@ SETTINGS_MESSAGE = (
     "Reply with 'done' to finish"
 )
 SETTINGS_ERROR = "❌ Unable to access settings at the moment."
+
+REQUEST_ERROR = (
+    "🐞 An error occurred while processing your request. Please try again later."
+)

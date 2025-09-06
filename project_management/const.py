@@ -10,47 +10,47 @@ class ProjectInfo(TypedDict):
 
 
 PROJECTS: dict[str, ProjectInfo] = {
-    "business-web:": {
+    "business_web": {
         "name": "Business Web",
         "project_dir": config.BUSINESS_WEB_PROJECT_DIR,
         "collection_name": config.BUSINESS_WEB_COLLECTION_NAME,
     },
-    "client-web": {
+    "client_web": {
         "name": "Client Web",
         "project_dir": config.CLIENT_WEB_PROJECT_DIR,
         "collection_name": config.CLIENT_WEB_COLLECTION_NAME,
     },
-    "jetlend-core": {
+    "jetlend_core": {
         "name": "Jetlend Core",
         "project_dir": config.JETLEND_CORE_PROJECT_DIR,
         "collection_name": config.JETLEND_CORE_COLLECTION_NAME,
     },
-    "underwriter-web": {
+    "underwriter_web": {
         "name": "Underwriter Web",
         "project_dir": config.UNDERWRITER_WEB_PROJECT_DIR,
         "collection_name": config.UNDERWRITER_WEB_COLLECTION_NAME,
     },
-    "jetlend-business-frontend": {
+    "jetlend_business_frontend": {
         "name": "Frontend Business",
         "project_dir": config.FRONTEND_BUSINESS_PROJECT_DIR,
         "collection_name": config.FRONTEND_BUSINESS_COLLECTION_NAME,
     },
-    "jetlend-underwriting-frontend": {
+    "jetlend_underwriting_frontend": {
         "name": "Frontend Underwriting",
         "project_dir": config.FRONTEND_BUSINESS_PROJECT_DIR,
         "collection_name": config.FRONTEND_BUSINESS_COLLECTION_NAME,
     },
-    "jetlend-partner-frontend": {
+    "jetlend_partner_frontend": {
         "name": "Frontend Partner",
         "project_dir": config.FRONTEND_PARTNER_PROJECT_DIR,
         "collection_name": config.FRONTEND_PARTNER_COLLECTION_NAME,
     },
-    "jetlend-client-frontend": {
+    "jetlend_client_frontend": {
         "name": "Frontend Client",
         "project_dir": config.FRONTEND_CLIENT_PROJECT_DIR,
         "collection_name": config.FRONTEND_CLIENT_COLLECTION_NAME,
     },
-    "jetlend-site-frontend": {
+    "jetlend_site_frontend": {
         "name": "Frontend Jetlend Site",
         "project_dir": config.FRONTEND_JETLEND_SITE_PROJECT_DIR,
         "collection_name": config.FRONTEND_JETLEND_SITE_COLLECTION_NAME,
