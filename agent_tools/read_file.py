@@ -82,12 +82,12 @@ def summarize_chunk(code_lines: str) -> str:
     # limit code lines
     code_lines = "\n".join(lines[:lines_limit])
     prompt = (
-        "You are a code assistant. When given a Python code snippet, "
+        "You are a code assistant. When given a code snippet, "
         "summarize its purpose and main operations in 2–3 concise plain-text sentences. "
         "Do not include any markdown formatting, code blocks, or commentary — just a direct summary."
     )
     return query_deepseek(
-        f"Summarize the following Python code:\n{code_lines}", system_prompt=prompt
+        f"Summarize the following code:\n{code_lines}", system_prompt=prompt
     )
 
 
@@ -103,6 +103,10 @@ def extract_top_level_imports(path: str) -> tuple[str, int]:
              (as a string with line numbers) and the line number directly
              following the last import statement.
     """
+    # works only for Python files
+    if not path.endswith(".py"):
+        return "", 0
+
     # Parse the AST
     with open(path, "r", encoding="utf-8") as f:
         tree = ast.parse(f.read(), filename=path)
