@@ -3,18 +3,79 @@ from datetime import datetime
 from typing import Callable, Any, Awaitable
 
 from aiogram import BaseMiddleware
-from aiogram.types import TelegramObject
+from aiogram.types import TelegramObject, Message
 
-from telegram_bot.db import AsyncUserDatabase, create_user_from_telegram
+from telegram_bot.db import AsyncUserDatabase, create_user_from_telegram, UserRole, User
 
 
 class DatabaseMiddleware(BaseMiddleware):
     """Middleware to automatically handle user registration, activity tracking, and access control"""
 
-    def __init__(self, db: AsyncUserDatabase):
+    def __init__(
+        self,
+        db: AsyncUserDatabase,
+        inactive_user_commands: set[str] | None = None,
+        user_role_commands: set[str] | None = None,
+    ):
+        """
+        Initialize the middleware with database and command permissions.
+
+        Args:
+            db: The async user database instance
+            inactive_user_commands: Set of commands available to inactive users (e.g., {'/start', '/help'})
+            user_role_commands: Set of commands available to users with 'user' role (e.g., {'/start', '/help', '/profile'})
+                               Users with 'superadmin' role have access to all commands
+        """
         self.db = db
         self.logger = logging.getLogger(self.__class__.__name__)
+
+        # Default commands for inactive users (minimal set)
+        self.inactive_user_commands = inactive_user_commands or {"/start"}
+
+        # Default commands for regular users
+        self.user_role_commands = user_role_commands or {"/start", "/help"}
+
         super().__init__()
+
+    def _extract_command(self, event: TelegramObject) -> str | None:
+        """Extract command from the event if it's a command message"""
+        if isinstance(event, Message) and event.text and event.text.startswith("/"):
+            # Extract the command (first word, including the /)
+            command = event.text.split()[0].split("@")[
+                0
+            ]  # Remove bot username if present
+            return command
+        return None
+
+    async def _check_command_allowed(
+        self, user_id: int, command: str, db_user: User
+    ) -> bool:
+        """
+        Check if user has permission to execute the command.
+
+        Returns:
+            True if user can execute the command, False otherwise
+        """
+        # If not a command, allow (this middleware only controls commands)
+        if not command:
+            return True
+
+        # Check if user is inactive first
+        if not db_user.is_active:
+            # Inactive users can only use limited commands
+            return command in self.inactive_user_commands
+
+        # Superadmins have access to all commands
+        if db_user.user_role == UserRole.SUPERADMIN.role_name:
+            return True
+
+        # Regular users have access to their allowed commands
+        if db_user.user_role == UserRole.USER.role_name:
+            return command in self.user_role_commands
+
+        # Unknown role - deny by default
+        self.logger.warning(f"Unknown role '{db_user.user_role}' for user {user_id}")
+        return False
 
     async def __call__(
         self,
@@ -47,8 +108,8 @@ class DatabaseMiddleware(BaseMiddleware):
                         getattr(user, "id", None),
                     )
 
-                # Check if user is active (banned users are set to is_active=False)
-                db_user = None
+                # Fetch user from database to check status and role
+                db_user: User | None = None
                 try:
                     db_user = await self.db.get_user(user.id)
                 except Exception:
@@ -57,7 +118,41 @@ class DatabaseMiddleware(BaseMiddleware):
                         getattr(user, "id", None),
                     )
 
-                if db_user and not getattr(db_user, "is_active", True):
+                # Extract command from the event
+                command = self._extract_command(event)
+
+                # Check command permissions
+                if command and db_user:
+                    has_permission = await self._check_command_allowed(
+                        user.id, command, db_user
+                    )
+
+                    if not has_permission:
+                        self.logger.info(
+                            "User %s (role: %s, active: %s) denied access to command: %s",
+                            user.id,
+                            getattr(db_user, "role", "unknown"),
+                            getattr(db_user, "is_active", False),
+                            command,
+                        )
+
+                        # Send permission denied message
+                        if isinstance(event, Message):
+                            try:
+                                await event.answer(
+                                    "❌ You don't have permission to use this command."
+                                )
+                            except Exception:
+                                self.logger.debug(
+                                    "Failed to send permission denied message",
+                                    exc_info=True,
+                                )
+
+                        # Stop processing
+                        return None
+
+                # Special handling for inactive users (for non-command messages)
+                if db_user and not getattr(db_user, "is_active", True) and not command:
                     self.logger.info(
                         "Blocked inactive user %s from accessing bot", user.id
                     )
@@ -82,15 +177,6 @@ class DatabaseMiddleware(BaseMiddleware):
                         and hasattr(event.message, "answer")
                     ):
                         try:
-                            if (
-                                hasattr(event.message, "text")
-                                and event.message.text == "/start"
-                            ):
-                                # For /start commands, reply with a more detailed message
-                                await event.message.answer(
-                                    "⚠️Welcome! Your access to this bot is not approved yet.\n"
-                                    "Please contact the administrator for more information."
-                                )
                             await event.message.answer(
                                 "❌ Your access to this bot is not approved."
                             )

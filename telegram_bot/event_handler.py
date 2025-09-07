@@ -49,6 +49,7 @@ class BotEventHandler:
         # Message handlers
         self.router.message.register(self.handle_start_command, CommandStart())
         self.router.message.register(self.handle_help_command, Command("help"))
+        self.router.message.register(self.handle_id_command, Command("id"))
         self.router.message.register(self.handle_stats_command, Command("stats"))
         self.router.message.register(self.handle_admin_command, Command("admin"))
         self.router.message.register(
@@ -129,6 +130,10 @@ class BotEventHandler:
         try:
             # Register user if new (will ignore if exists)
             await self.db.add_user(user)
+            user = await self.db.get_user(message.from_user.id)
+            if not user.is_active:
+                await message.answer(const.WELCOME_MESSAGE)
+                return
 
             # Log the command activity
             await self.db.log_activity(
@@ -144,7 +149,9 @@ class BotEventHandler:
             )
 
             await message.answer(
-                const.WELCOME_MESSAGE.format(first_name=message.from_user.first_name)
+                const.CHOOSE_PROJECT_MESSAGE.format(
+                    first_name=message.from_user.first_name
+                )
             )
 
             await self.db.update_user(user.user_id, current_session_id=None)
@@ -152,6 +159,24 @@ class BotEventHandler:
         except DatabaseError as e:
             self.logger.error(f"Database error in start command: {e}")
             await message.answer(const.REGISTRATION_ISSUE_MESSAGE)
+
+    async def handle_id_command(self, message: Message):
+        """
+        /id command - Show user ID
+        """
+        try:
+            await self.db.log_activity(
+                message.from_user.id,
+                BotConstants.ACTIVITY_COMMAND,
+                {"command": "/id"},
+            )
+            await message.answer(
+                f"Your user ID is: <code>{message.from_user.id}</code>",
+                parse_mode="HTML",
+            )
+        except DatabaseError as e:
+            self.logger.error(f"Database error in id command: {e}")
+            await message.answer("❌ Unable to retrieve your user ID at the moment.")
 
     async def handle_help_command(self, message: Message):
         """
@@ -420,6 +445,17 @@ class BotEventHandler:
 
             if success:
                 await message.answer(f"✅ User {target_user_id} has been activated.")
+                try:
+                    await message.bot.send_message(
+                        target_user_id, const.USER_ACTIVATION_MESSAGE
+                    )
+                    await message.bot.send_chat_action(
+                        chat_id=message.from_user.id, action="upload_photo"
+                    )
+                except Exception as e:
+                    self.logger.debug(
+                        f"Failed to notify user {target_user_id} about activation: {e}"
+                    )
             else:
                 await message.answer(f"❌ Failed to activate user {target_user_id}")
 

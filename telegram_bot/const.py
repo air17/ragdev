@@ -25,11 +25,15 @@ class BotConstants:
     DEFAULT_CLEANUP_DAYS = 90
 
 
-WELCOME_MESSAGE = (
+CHOOSE_PROJECT_MESSAGE = (
     "Choose a project to start a new chat:\n"
     + "".join([f"/{key} - {info['name']}\n" for key, info in PROJECTS.items()])
     + "\n"
     "Use /help to see all available commands."
+)
+WELCOME_MESSAGE = (
+    "👋 Welcome! Your access to this bot is not approved yet.\n"
+    "Please contact the administrator for more information."
 )
 REGISTRATION_ISSUE_MESSAGE = "⚠️Welcome! There was an issue with registration."
 
@@ -89,6 +93,7 @@ ADMIN_PANEL_MESSAGE = (
     "Use /promote <user_id> <role> to promote users"
 )
 ADMIN_ERROR = "❌ Unable to access admin panel at the moment."
+USER_ACTIVATION_MESSAGE = "✅ Your access to the bot has been approved! You can now use the bot. /help to see available commands."
 
 SETTINGS_MESSAGE = (
     "⚙️ **Your Settings**\n"

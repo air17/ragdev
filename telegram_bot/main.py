@@ -4,6 +4,7 @@ from aiogram import Bot, Dispatcher
 from aiogram.types import BotCommand
 
 import config
+from project_management.const import PROJECTS
 from telegram_bot.const import BotConstants
 from telegram_bot.db import (
     AsyncUserDatabase,
@@ -24,7 +25,23 @@ async def setup_production_bot():
     dp = Dispatcher()
 
     # Add middleware for auto-registration
-    dp.message.middleware(DatabaseMiddleware(db))
+    dp.message.middleware(
+        DatabaseMiddleware(
+            db,
+            inactive_user_commands={"/start", "/help", "/id"},
+            user_role_commands={
+                "/start",
+                "/help",
+                "/my_chats",
+                "/end_chat",
+                "/settings",
+                "/current_branch",
+                "/list_branches",
+                "/pull_current_branch",
+                "/chat",
+            }.union({f"/{key}" for key in PROJECTS.keys()}),
+        )
+    )
     dp.callback_query.middleware(DatabaseMiddleware(db))
     dp.inline_query.middleware(DatabaseMiddleware(db))
 
@@ -43,6 +60,7 @@ async def setup_production_bot():
         BotCommand(command="/pull_current_branch", description="Pull current branch"),
         BotCommand(command="/settings", description="Your settings"),
         BotCommand(command="/admin", description="Admin panel"),
+        BotCommand(command="/id", description="Get your user ID"),
     ]
     await bot.set_my_commands(all_commands)
 
