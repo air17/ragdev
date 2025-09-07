@@ -51,6 +51,9 @@ class BotEventHandler:
         self.router.message.register(self.handle_help_command, Command("help"))
         self.router.message.register(self.handle_stats_command, Command("stats"))
         self.router.message.register(self.handle_admin_command, Command("admin"))
+        self.router.message.register(
+            self.handle_list_users_command, Command("list_users")
+        )
         self.router.message.register(self.handle_ban_command, Command("ban"))
         self.router.message.register(self.handle_activate_command, Command("activate"))
         self.router.message.register(self.handle_promote_command, Command("promote"))
@@ -325,6 +328,49 @@ class BotEventHandler:
         except DatabaseError as e:
             self.logger.error(f"Database error in ban command: {e}")
             await message.answer("❌ Unable to process ban command at the moment.")
+
+    async def handle_list_users_command(self, message: Message):
+        """
+        /list_users command - List all users
+        """
+        users_limit: int = 100  # Limit to avoid overly long messages
+        try:
+            # Check admin permissions
+            if not await self.db.is_admin_or_higher(message.from_user.id):
+                await message.answer("❌ Access denied.")
+                return
+
+            users: list[User] = await self.db.get_all_users()
+            if not users:
+                await message.answer("No users found.")
+                return
+
+            response_lines = ["👥 Registered Users:"]
+            for user in users[:users_limit]:
+                status = "✅" if user.is_active else "❌"
+                username: str = f"@{user.username}" if user.username else ""
+                response_lines.append(
+                    f"• <code>{user.user_id}</code>, Name: {user.first_name} {user.last_name or ''} {username}, Role: {user.user_role}, Status: {status}"
+                )
+
+            # Log admin action
+            await self.db.log_activity(
+                message.from_user.id,
+                BotConstants.ACTIVITY_ADMIN_ACTION,
+                {"action": "list_users", "total_users": len(users)},
+            )
+
+            # Send the response in chunks if too long
+            response_text: str = "\n".join(response_lines)
+            for i in range(0, len(response_text), MAX_MESSAGE_LENGTH):
+                await message.answer(
+                    remove_non_telegram_html(response_text[i : i + MAX_MESSAGE_LENGTH]),
+                    parse_mode="HTML",
+                )
+
+        except DatabaseError as e:
+            self.logger.error(f"Database error in list users command: {e}")
+            await message.answer("❌ Unable to retrieve user list at the moment.")
 
     async def handle_activate_command(self, message: Message):
         """

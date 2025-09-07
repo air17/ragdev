@@ -39,7 +39,8 @@ ADMIN_HELP = (
     "/admin - Admin panel\n"
     "/ban - Ban user\n"
     "/activate - Activate user\n"
-    "/promote - Promote user\n\n"
+    "/promote - Promote user\n"
+    "/list_users - List all users\n\n"
 )
 USER_HELP = (
     "📚 User Help:\n"

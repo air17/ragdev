@@ -462,6 +462,27 @@ class AsyncUserDatabase:
         except ValueError:
             return False
 
+    async def get_all_users(self, active_only: bool = False) -> list[User]:
+        """Get all users, optionally filtering by active status, sorted by creation date, newest first"""
+        try:
+            async with self.get_connection() as conn:
+                query = "SELECT * FROM users"
+                params = []
+
+                if active_only:
+                    query += " WHERE is_active = ?"
+                    params.append(True)
+
+                query += " ORDER BY created_at DESC"
+
+                async with conn.execute(query, params) as cursor:
+                    rows = await cursor.fetchall()
+                    return [self._row_to_user(dict(row)) for row in rows]
+
+        except Exception as e:
+            self.logger.error(f"Error retrieving all users: {e}")
+            raise DatabaseError(f"Failed to retrieve users: {e}")
+
     async def get_users_by_role(self, role: Union[str, UserRole]) -> List[User]:
         """Get users by their role"""
         role_name = role.role_name if isinstance(role, UserRole) else role
