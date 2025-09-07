@@ -322,7 +322,7 @@ class ChatAgent:
                 path: str = self.project_dir
                 if args.get("path"):
                     path += "/" + args["path"]
-                result = search_codebase(args["query"], self.project_dir)
+                result = search_codebase(args["query"], path, self.project_dir)
             elif tool == "read_file":
                 end_line: int | None = (
                     args.get("end_line_one_indexed_inclusive")

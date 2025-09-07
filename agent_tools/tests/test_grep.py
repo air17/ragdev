@@ -45,6 +45,8 @@ def test_search_codebase_mocked(mock_ripgrepy):
     mock_instance.with_filename.return_value = mock_instance
     mock_instance.line_number.return_value = mock_instance
     mock_instance.glob.return_value = mock_instance
+    mock_instance.trim.return_value = mock_instance
+    mock_instance.smart_case.return_value = mock_instance
     mock_instance.run.return_value = mock_run
     mock_ripgrepy.return_value = mock_instance
 
