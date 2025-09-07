@@ -39,7 +39,7 @@ class ChatAgent:
         collection_name: str | None = None,
         api_key: str = DEEPSEEK_API_KEY,
         model: str = "deepseek-chat",
-        max_iterations: int = 10,
+        max_iterations: int = 15,
         session_manager: ChatSessionManager | None = None,
     ) -> None:
         # session is optional; if provided, messages are loaded from it and persisted there
@@ -247,14 +247,14 @@ class ChatAgent:
                 iterations += 1
                 if iterations > self.max_iterations:
                     self._append_message(
-                        ChatCompletionSystemMessageParam(
-                            content="Error: too many iterations, answer with what you have so far",
-                            role="system",
+                        ChatCompletionUserMessageParam(
+                            content="Error - too many tools use, answer my question with what you have so far:",
+                            role="user",
                         )
                     )
                     final_response: ChatCompletionMessage = (
                         self.deepseek.chat.completions.create(
-                            model=self.model, messages=self.messages, tools=self.tools
+                            model=self.model, messages=self.messages
                         )
                         .choices[0]
                         .message
