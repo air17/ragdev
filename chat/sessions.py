@@ -27,8 +27,15 @@ class ChatSessionManager:
         if session_id:
             # load project_dir and collection_name
             data: type[TypedDict] = self.load_full(session_id)
-            self.project_dir = data.get("meta", {}).get("project_dir")
-            self.collection_name = data.get("meta", {}).get("collection_name")
+            self.project_dir: str | None = data.get("meta", {}).get("project_dir")
+            self.collection_name: str | None = data.get("meta", {}).get(
+                "collection_name"
+            )
+            self.project_prompt: str | None = data.get("meta", {}).get("project_prompt")
+            self.submodules: tuple[str, ...] = data.get("meta", {}).get(
+                "submodules", ()
+            )
+            self.repo_url: str | None = data.get("meta", {}).get("repo_url")
 
         self.active_session: str = session_id
 
@@ -48,6 +55,9 @@ class ChatSessionManager:
         session_id: str | None = None,
         project_dir: str | None = None,
         collection_name: str | None = None,
+        project_prompt: str | None = None,
+        submodules: tuple[str, ...] | None = None,
+        repo_url: str | None = None,
     ) -> str:
         """Create a new chat session with optional initial messages, and return its ID."""
         sid: str = session_id or str(uuid.uuid4())
@@ -55,6 +65,9 @@ class ChatSessionManager:
             "id": sid,
             "project_dir": project_dir,
             "collection_name": collection_name,
+            "project_prompt": project_prompt,
+            "submodules": submodules or (),
+            "repo_url": repo_url,
             "created_at": _now(),
             "updated_at": _now(),
         }
@@ -62,6 +75,9 @@ class ChatSessionManager:
         self._write(self._path(sid), payload)
         self.project_dir = project_dir
         self.collection_name = collection_name
+        self.project_prompt = project_prompt
+        self.submodules = submodules or ()
+        self.repo_url = repo_url
         self.active_session = sid
         return sid
 

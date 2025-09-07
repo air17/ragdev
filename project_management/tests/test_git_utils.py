@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import Mock, patch, mock_open
+from unittest.mock import Mock, patch
 from git import Repo, Commit
 
 # Import the functions to test (adjust import path as needed)
@@ -17,7 +17,6 @@ from project_management.git_utils import (
 
 
 class TestSwitchSubmodulesToBranch:
-    @patch("builtins.open", mock_open(read_data="submodule1\nsubmodule2\n"))
     @patch("project_management.git_utils.Repo")
     @patch("project_management.git_utils.get_repo_changed_files_for_switch")
     def test_switch_submodules_success(self, mock_get_changed_files, mock_repo_class):
@@ -28,7 +27,9 @@ class TestSwitchSubmodulesToBranch:
         mock_get_changed_files.return_value = {"file1.py", "file2.py"}
 
         # Act
-        result = switch_submodules_to_branch("/repo", "new_branch")
+        result = switch_submodules_to_branch(
+            "/repo", "new_branch", ("submodule1", "submodule2")
+        )
 
         # Assert
         assert isinstance(result, set)
@@ -38,12 +39,11 @@ class TestSwitchSubmodulesToBranch:
     @patch("builtins.open", side_effect=FileNotFoundError)
     def test_switch_submodules_no_file(self, mock_open):
         # Act
-        result = switch_submodules_to_branch("/repo", "new_branch")
+        result = switch_submodules_to_branch("/repo", "new_branch", ())
 
         # Assert
         assert result == set()
 
-    @patch("builtins.open", mock_open(read_data="submodule1\n"))
     @patch("project_management.git_utils.Repo")
     def test_switch_submodules_already_on_branch(self, mock_repo_class, capsys):
         # Arrange
@@ -52,7 +52,7 @@ class TestSwitchSubmodulesToBranch:
         mock_repo_class.return_value = mock_repo
 
         # Act
-        result = switch_submodules_to_branch("/repo", "target_branch")
+        result = switch_submodules_to_branch("/repo", "target_branch", ("submodule1",))
 
         # Assert
         captured = capsys.readouterr()
@@ -234,7 +234,6 @@ class TestGetChangedFiles:
 
 
 class TestPullSubmodules:
-    @patch("builtins.open", mock_open(read_data="submodule1\nsubmodule2\n"))
     @patch("project_management.git_utils.Repo")
     @patch("project_management.git_utils.pull_repository")
     def test_pull_submodules_success(self, mock_pull_repo, mock_repo_class):
@@ -242,17 +241,16 @@ class TestPullSubmodules:
         mock_pull_repo.return_value = (Mock(), Mock())
         mock_pull_repo.return_value = (Mock(), Mock(), "")  # Added third parameter
         # Act
-        result = pull_submodules("/repo")
+        result = pull_submodules("/repo", ("submodule1", "submodule2"))
 
         # Assert
         assert isinstance(result, list)
         assert len(result) == 2
         assert mock_pull_repo.call_count == 2
 
-    @patch("builtins.open", side_effect=FileNotFoundError)
-    def test_pull_submodules_no_file(self, mock_open):
+    def test_pull_submodules_no_file(self):
         # Act
-        result = pull_submodules("/repo")
+        result = pull_submodules("/repo", ())
 
         # Assert
         assert result == []
@@ -315,7 +313,6 @@ class TestPullCurrentBranch:
 
 
 class TestGetCurrentBranch:
-    @patch("builtins.open", mock_open(read_data="submodule1\nsubmodule2\n"))
     @patch("project_management.git_utils.Repo")
     def test_get_current_branch_with_submodules(self, mock_repo_class):
         # Arrange
@@ -331,7 +328,7 @@ class TestGetCurrentBranch:
         mock_repo_class.side_effect = [main_repo, sub_repo1, sub_repo2]
 
         # Act
-        result = get_current_branch("/repo")
+        result = get_current_branch("/repo", ("submodule1", "submodule2"))
 
         # Assert
         assert "Main repo: main" in result
@@ -354,19 +351,14 @@ class TestGetCurrentBranch:
 
     @patch("project_management.git_utils.Repo", side_effect=Exception("Not a git repo"))
     def test_get_current_branch_not_git_repo(self, mock_repo_class):
-        # Act
-        result = get_current_branch("/not-a-repo")
-
-        # Assert
-        assert result is None
+        with pytest.raises(Exception):
+            get_current_branch("/not-a-repo")
 
     @patch("project_management.git_utils.Repo", side_effect=ValueError("Detached HEAD"))
     def test_get_current_branch_detached_head(self, mock_repo_class):
-        # Act
-        result = get_current_branch("/repo")
-
-        # Assert
-        assert result is None
+        # Assert raises ValueError
+        with pytest.raises(ValueError):
+            get_current_branch("/repo")
 
 
 class TestGetAllBranches:

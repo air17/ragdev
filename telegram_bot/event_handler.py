@@ -620,6 +620,9 @@ class BotEventHandler:
             session_id = ChatSessionManager().create_session(
                 project_dir=project_info["project_dir"],
                 collection_name=project_info["collection_name"],
+                project_prompt=project_info.get("project_prompt"),
+                repo_url=project_info.get("repo_url"),
+                submodules=project_info.get("submodules"),
             )
             # save session to db
             await self.db.create_chat_session(
@@ -929,6 +932,7 @@ class BotEventHandler:
                 session_manager.collection_name,
                 session_manager.project_dir,
                 new_branch_name,
+                session_manager.submodules,
             )
             await self.handle_current_branch_command(message)
         except Exception as e:
@@ -945,7 +949,10 @@ class BotEventHandler:
             return await message.answer(const.NO_ACTIVE_CHAT)
         try:
             await message.answer(
-                "Current branch:\n" + get_current_branch(session_manager.project_dir)
+                "Current branch:\n"
+                + get_current_branch(
+                    session_manager.project_dir, session_manager.submodules
+                )
             )
         except Exception as e:
             self.logger.error(

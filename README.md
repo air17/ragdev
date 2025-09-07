@@ -73,13 +73,6 @@ DEFAULT_COLLECTION_NAME=code_chunks
 
 ## Usage
 
-### About `project_prompt.txt`
-
-The `project_prompt.txt` file in the project root contains your project's main description and instructions.
-This file is automatically included in the agent's system prompt, so the agent always uses its contents to understand your project's goals and requirements.
-**This file is optional:** If it is missing, the agent will simply proceed without any custom project prompt or rules.
-To update what the agent knows about your project, simply edit `project_prompt.txt` and save your changes.
-
 ### Running the Telegram Bot
 
 For development and testing, you can run the bot directly:

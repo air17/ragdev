@@ -1,5 +1,4 @@
 import json
-import os
 from typing import TypedDict, Generator
 
 from openai import OpenAI
@@ -56,6 +55,16 @@ class ChatAgent:
             EmbeddingManager(collection_name=collection_name)
             if collection_name
             else None
+        )
+
+        self.project_prompt: str | None = (
+            session_manager.project_prompt if session_manager else None
+        )
+        self.submodules: tuple[str] = (
+            session_manager.submodules if session_manager else ()
+        )
+        self.repo_url: str | None = (
+            session_manager.repo_url if session_manager else None
         )
 
         self.tools: list[ChatCompletionToolParam] = [
@@ -211,7 +220,13 @@ class ChatAgent:
                 ),
             )
         self.system_prompt = SYSTEM_PROMPT.format(
-            project_tree=ls(self.project_dir), project_prompt=self._get_project_prompt()
+            project_tree=ls(self.project_dir),
+            project_prompt=(
+                "\n<project_rules>\n" + self.project_prompt + "\n</project_rules>\n"
+                if self.project_prompt
+                else ""
+            ),
+            repo_url="<repo_url>" + (self.repo_url or "") + "</repo_url>\n",
         )
 
     def get_deepseek_response_text(
@@ -367,11 +382,3 @@ class ChatAgent:
         self.messages.append(message)
         if self.session_manager:
             self.session_manager.append_messages([message])
-
-    def _get_project_prompt(self) -> str:
-        try:
-            with open(os.path.join(self.project_dir, "project_prompt.txt"), "r") as f:
-                prompt: str = "\n<project_rules>\n" + f.read() + "\n</project_rules>\n"
-        except FileNotFoundError:
-            prompt = ""
-        return prompt

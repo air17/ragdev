@@ -3,21 +3,10 @@ from git import DiffIndex, Repo, Commit
 from rag.code_indexer import reindex_files
 
 
-PROJECT_SUBMODULES_FILE_NAME = "project_submodules.txt"
-
-
-def switch_submodules_to_branch(repo_dir: str, new_branch_name: str) -> set[str]:
+def switch_submodules_to_branch(
+    repo_dir: str, new_branch_name: str, submodule_names: tuple[str, ...]
+) -> set[str]:
     """Switch all submodules to the specified branch if it exists."""
-    try:
-        with open(repo_dir + "/" + PROJECT_SUBMODULES_FILE_NAME, "r") as f:
-            submodule_names: list[str] = [
-                submodule_name
-                for submodule_name in f.read().splitlines()
-                if submodule_name.strip()
-            ]
-    except FileNotFoundError:
-        return set()
-
     changed_files: set[str] = set()
     for submodule_name in submodule_names:
         try:
@@ -58,7 +47,12 @@ def get_repo_changed_files_for_switch(
         return set()
 
 
-def switch_branch(collection_name: str, repo_dir: str, new_branch_name: str) -> None:
+def switch_branch(
+    collection_name: str,
+    repo_dir: str,
+    new_branch_name: str,
+    submodule_names: tuple[str, ...] = (),
+) -> None:
     """
     Switch to a new branch and all submodules, then reindex changed files.
 
@@ -66,6 +60,7 @@ def switch_branch(collection_name: str, repo_dir: str, new_branch_name: str) -> 
         collection_name: Name of the collection to reindex
         repo_dir: Path to the repository directory
         new_branch_name: Name of the branch to switch to
+        submodule_names: Tuple of submodule names to switch to the new branch
     """
     repo: Repo = Repo(repo_dir)
     current_branch: str = repo.active_branch.name
@@ -87,7 +82,9 @@ def switch_branch(collection_name: str, repo_dir: str, new_branch_name: str) -> 
     )
 
     # Switch all submodules to the new branch and get changed files
-    all_changed_files |= switch_submodules_to_branch(repo_dir, new_branch_name)
+    all_changed_files |= switch_submodules_to_branch(
+        repo_dir, new_branch_name, submodule_names
+    )
 
     if not all_changed_files:
         print("No changed files found. Skipping reindexing.")
@@ -118,18 +115,10 @@ def get_changed_files(
     return {f"{path_prefix}{d.a_path or d.b_path}" for d in diff_index}
 
 
-def pull_submodules(repo_dir: str) -> list[tuple[Commit, Commit, str]]:
+def pull_submodules(
+    repo_dir: str, submodule_names: tuple[str, ...]
+) -> list[tuple[Commit, Commit, str]]:
     """Pull all submodules in the repository."""
-    try:
-        with open(repo_dir + "/" + PROJECT_SUBMODULES_FILE_NAME, "r") as f:
-            submodule_names: list[str] = [
-                submodule_name
-                for submodule_name in f.read().splitlines()
-                if submodule_name.strip()
-            ]
-    except FileNotFoundError:
-        return []
-
     old_new_commits: list[tuple[Commit, Commit, str]] = []
     for submodule_name in submodule_names:
         try:
@@ -142,13 +131,16 @@ def pull_submodules(repo_dir: str) -> list[tuple[Commit, Commit, str]]:
     return old_new_commits
 
 
-def pull_current_branch(collection_name: str, repo_dir: str) -> None:
+def pull_current_branch(
+    collection_name: str, repo_dir: str, submodule_names: tuple[str, ...] = ()
+) -> None:
     """
     Pull the current branch and all submodules, then reindex changed files.
 
     Args:
         collection_name: Name of the collection to reindex
         repo_dir: Path to the repository directory
+        submodule_names: Tuple of submodule names to pull
     """
     repo: Repo = Repo(repo_dir)
 
@@ -156,7 +148,7 @@ def pull_current_branch(collection_name: str, repo_dir: str) -> None:
     old_new_commits: list[tuple[Commit, Commit, str]] = [pull_repository(repo, "")]
 
     # Pull all submodules
-    old_new_commits.extend(pull_submodules(repo_dir))
+    old_new_commits.extend(pull_submodules(repo_dir, submodule_names))
 
     if not collection_name:
         print("No collection name provided. Skipping reindexing.")
@@ -179,46 +171,36 @@ def pull_current_branch(collection_name: str, repo_dir: str) -> None:
     reindex_files(collection_name, all_changed_files, repo_dir)
 
 
-def get_current_branch(repo_dir: str) -> str | None:
+def get_current_branch(
+    repo_dir: str, submodule_names: tuple[str, ...] = ()
+) -> str | None:
     """
     Get the name of the current Git branch.
 
     Args:
         repo_dir: Path to the Git repository
+        submodule_names: Tuple of submodule names to check branches for
 
     Returns:
         str: Name of the current branch, or None if not in a Git repository or in detached HEAD state
     """
+    repo = Repo(repo_dir)
+    # adding main repo branch name
+    branches_names: list[str] = ["Main repo: " + repo.active_branch.name]
     try:
-        repo = Repo(repo_dir)
-        # adding main repo branch name
-        branches_names: list[str] = ["Main repo: " + repo.active_branch.name]
-
         # adding submodules branch names
-        try:
-            # reading submodules directories names
-            with open(repo_dir + "/" + PROJECT_SUBMODULES_FILE_NAME, "r") as f:
-                submodule_names: list[str] = [
-                    submodule_name
-                    for submodule_name in f.read().splitlines()
-                    if submodule_name.strip()
-                ]
-        except FileNotFoundError:
-            pass
-        else:
-            for submodule_name in submodule_names:
-                submodule_repo = Repo(repo_dir + "/" + submodule_name)
-                branches_names.append(
-                    submodule_name + ": " + submodule_repo.active_branch.name
-                )
-
-        return "\n".join(branches_names)
+        for submodule_name in submodule_names:
+            submodule_repo = Repo(repo_dir + "/" + submodule_name)
+            branches_names.append(
+                submodule_name + ": " + submodule_repo.active_branch.name
+            )
     except (ValueError, TypeError):
         # Handle case when in detached HEAD state
         return None
     except Exception:
         # Handle case when not a Git repository
         return None
+    return "\n".join(branches_names)
 
 
 def get_all_branches(repo_dir: str) -> list[str]:

@@ -15,6 +15,9 @@ def test_chat_agent_with_session():
     """Test that ChatAgent loads messages from a session if provided."""
     mock_session = MagicMock(spec=ChatSessionManager)
     mock_session.get_messages.return_value = [{"role": "user", "content": "test"}]
+    mock_session.project_prompt = ""
+    mock_session.submodules = ()
+    mock_session.repo_url = None
 
     agent = ChatAgent(project_dir="/test/project", session_manager=mock_session)
 
