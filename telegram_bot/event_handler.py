@@ -7,6 +7,7 @@ from aiogram.filters import CommandStart, Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import Message, CallbackQuery
+from bleach import clean
 
 from chat.agent import ChatAgent
 from chat.sessions import ChatSessionManager
@@ -725,13 +726,14 @@ class BotEventHandler:
             await message.bot.send_chat_action(chat_id=user_id, action="typing")
 
             # Process the message and get response
+            meta_message: Message | None = None
             response: str = ""
             for output, response_type in agent.run(message.text):
+                await message.bot.send_chat_action(chat_id=user_id, action="typing")
                 if response_type == "partial":
-                    await message.answer(
-                        output, parse_mode=None, disable_notification=True
+                    meta_message = await self._update_meta_message(
+                        message, meta_message, output
                     )
-                    await message.bot.send_chat_action(chat_id=user_id, action="typing")
                 else:
                     response = output
 
@@ -740,7 +742,7 @@ class BotEventHandler:
             )
 
             await message.answer(
-                "<i>Formatting response...</i>",
+                const.FORMATTING_RESPONSE_MESSAGE,
                 parse_mode="HTML",
                 disable_notification=True,
             )
@@ -762,6 +764,36 @@ class BotEventHandler:
             await message.answer(
                 "Sorry, I encountered an error processing your message. Please try again later."
             )
+
+    @staticmethod
+    async def _update_meta_message(
+        current_message: Message, meta_message: Message | None, new_text: str
+    ) -> Message:
+        """Helper to update or send a meta message"""
+        new_text = "<i>" + clean(new_text, tags=[], strip=True) + "</i>"
+        if not meta_message:
+            meta_message = await current_message.answer(
+                f"<b>Thinking...</b>\n\n{new_text}",
+                parse_mode="HTML",
+                disable_notification=True,
+            )
+        else:
+            # don't exceed max message length minus buffer for "Formatting response"
+            if len(meta_message.text) + len(new_text) > MAX_MESSAGE_LENGTH - 40:
+                if meta_message.text.endswith("..."):
+                    if not len(meta_message.text) > MAX_MESSAGE_LENGTH - 40:
+                        meta_message = await meta_message.edit_text(
+                            meta_message.text + " ...", parse_mode="HTML"
+                        )
+                else:
+                    meta_message = await meta_message.edit_text(
+                        meta_message.text + "\n...", parse_mode="HTML"
+                    )
+            else:
+                meta_message = await meta_message.edit_text(
+                    "<i>" + meta_message.text + "</i>\n\n" + new_text, parse_mode="HTML"
+                )
+        return meta_message
 
     async def get_current_session_manager(
         self, user_id: int

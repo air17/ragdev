@@ -108,3 +108,6 @@ NO_ACTIVE_CHAT = (
     "❓ You don't have an active chat session. Use /start to start a new conversation."
 )
 CHAT_ENDED_MESSAGE = "✅ Your current chat session has been ended."
+
+
+FORMATTING_RESPONSE_MESSAGE = "<i>Formatting response...</i> 📝"

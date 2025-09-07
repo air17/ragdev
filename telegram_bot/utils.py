@@ -14,6 +14,7 @@ def markdown_to_telegram_html_ai(md_text):
         "For inline code, use <code> tags. For code blocks, use <pre> tags.\n"
         "For list items, just prepend each item with a bullet • and don't use unsupported list tags.\n"
         "All <, > and & symbols that are not a part of a tag or an HTML entity must be replaced with the corresponding HTML entities (< with &lt;, > with &gt; and & with &amp;).\n"
+        "But don't escape non html symbols (like apostrophes ' with &apos;), leave them as is.\n"
         "Remove any unsupported tags and convert them to plain text.\n"
         "Ensure that 'a' tags have just a 'href' attribute.\n"
         "Add two newlines before and after blockquotes for spacing.\n"
