@@ -693,8 +693,9 @@ class BotEventHandler:
                     f"{i}. <code>{session.name}</code>{last_active} - {session.message_count} messages"
                 )
             if len(response) > 31:
+                trimmed_number: int = len(response) - 31
                 response = response[:31]
-                response.append(f"... and {len(response) - 30} more sessions.")
+                response.append(f"... and {trimmed_number} more sessions.")
 
             # Add current session indicator if any
             user = await self.db.get_user(message.from_user.id)
