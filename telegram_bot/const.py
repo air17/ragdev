@@ -117,3 +117,6 @@ CHAT_ENDED_MESSAGE = "✅ Your current chat session has been ended."
 
 
 FORMATTING_RESPONSE_MESSAGE = "<i>Formatting response...</i> 📝"
+RESPONSE_END_MESSAGE = (
+    "You can ask follow-up questions in this conversation or /start a new chat."
+)

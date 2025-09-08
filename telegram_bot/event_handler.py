@@ -844,6 +844,9 @@ class BotEventHandler:
                     disable_web_page_preview=True,
                 )
                 await asyncio.sleep(0.1)  # Slight delay to avoid hitting rate limits
+            await message.answer(
+                const.RESPONSE_END_MESSAGE, parse_mode="HTML", disable_notification=True
+            )
 
         except Exception as e:
             self.logger.error(f"Error handling chat message: {e}", exc_info=True)
