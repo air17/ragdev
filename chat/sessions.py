@@ -94,6 +94,7 @@ class ChatSessionManager:
                         "updated_at": meta.get("updated_at"),
                         "project_dir": meta.get("project_dir"),
                         "collection_name": meta.get("collection_name"),
+                        "total_tokens": meta.get("total_tokens"),
                     }
                 )
             except Exception:
@@ -112,10 +113,18 @@ class ChatSessionManager:
         """Get the list of messages for the active session."""
         return self.load_full(self.active_session).get("messages", [])
 
-    def append_messages(self, messages: list[type[TypedDict]]) -> None:
+    def get_meta(self) -> type[TypedDict]:
+        """Get the metadata for the active session."""
+        return self.load_full(self.active_session).get("meta", {})
+
+    def append_messages(
+        self, messages: list[type[TypedDict]], total_tokens: int | None = None
+    ) -> None:
         """Append messages to the active session and update its timestamp."""
         p: Path = self._path(self.active_session)
         data: type[TypedDict] = self.load_full(self.active_session)
         data.setdefault("messages", []).extend(messages)
         data.setdefault("meta", {})["updated_at"] = _now()
+        if total_tokens is not None:
+            data["meta"]["total_tokens"] = total_tokens
         self._write(p, data)

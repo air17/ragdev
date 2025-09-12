@@ -73,11 +73,13 @@ STATISTICS_MESSAGE = (
     "\n"
     "🎯 Top Commands:\n"
     "{top_commands}"
+    "\n\nTo view user-specific statistics, use /stats <user_id> (admin only)."
 )
 USER_STATS_MESSAGE = (
     "📊 Your Statistics {analytics_days} days\n"
     "💬 Messages: {total_messages}\n"
     "⚡ Commands: {total_commands}\n"
+    "🧠 Total Tokens Used: {total_tokens}\n"
     "📅 Member Since: {first_interaction}"
 )
 STATISTICS_ERROR = "❌ Unable to retrieve statistics at the moment."

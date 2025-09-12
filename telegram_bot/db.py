@@ -634,6 +634,40 @@ class AsyncUserDatabase:
             self.logger.error(f"Error getting activity stats for user {user_id}: {e}")
             raise DatabaseError(f"Failed to get activity stats: {e}")
 
+    async def get_message_activity_user_stats(
+        self, user_id: int, days: int = 30
+    ) -> list[dict[str, Any]]:
+        """Get user message activity statistics with activity data breakdown for each day"""
+        try:
+            async with self.get_connection() as conn:
+                since_date = datetime.now() - timedelta(days=days)
+
+                # Message breakdown
+                async with conn.execute(
+                    """
+                    SELECT DATE(timestamp) as date, COUNT(*) as count, activity_data
+                    FROM user_activities
+                    WHERE user_id = ? AND activity_type = 'message' AND timestamp >= ?
+                    GROUP BY DATE(timestamp)
+                    ORDER BY date DESC
+                """,
+                    (user_id, since_date.isoformat()),
+                ) as cursor:
+                    message_stats: list[dict[str, Any]] = []
+                    for row in await cursor.fetchall():
+                        try:
+                            data = json.loads(row[2]) if row[2] else {}
+                        except json.JSONDecodeError:
+                            data = {}
+                        message_stats.append(
+                            {"date": row[0], "count": row[1], "activity_data": data}
+                        )
+                return message_stats
+
+        except Exception as e:
+            self.logger.error(f"Error getting message stats for user {user_id}: {e}")
+            raise DatabaseError(f"Failed to get message stats: {e}")
+
     async def get_bot_analytics(self, days: int = 30) -> Dict[str, Any]:
         """Get comprehensive bot analytics"""
         try:

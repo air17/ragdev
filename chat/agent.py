@@ -283,7 +283,10 @@ class ChatAgent:
                         content=new_assistant_message.content,
                         role="assistant",
                         tool_calls=new_assistant_message.tool_calls,
-                    )
+                    ),
+                    total_tokens=response.usage.total_tokens
+                    if response.usage
+                    else None,
                 )
 
                 for tool_call in new_assistant_message.tool_calls:
@@ -377,8 +380,18 @@ class ChatAgent:
             result = f"Tool call failed with exception: {e}"
         return result
 
-    def _append_message(self, message: type[TypedDict]) -> None:
+    def _append_message(
+        self, message: type[TypedDict], total_tokens: int | None = None
+    ) -> None:
         """Append message to in-memory history and persist if session provided."""
         self.messages.append(message)
         if self.session_manager:
-            self.session_manager.append_messages([message])
+            self.session_manager.append_messages([message], total_tokens=total_tokens)
+
+    @property
+    def total_tokens(self) -> int:
+        return (
+            self.session_manager.get_meta().get("total_tokens", 0)
+            if self.session_manager
+            else 0
+        )

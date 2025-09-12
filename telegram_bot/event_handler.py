@@ -209,11 +209,13 @@ class BotEventHandler:
         """
         /stats command - Show bot/user statistics
         """
+        is_admin = await self.db.is_admin_or_higher(message.from_user.id)
         try:
             # Check if user has permission
-            is_admin = await self.db.is_admin_or_higher(message.from_user.id)
 
-            if is_admin:
+            user_id = message.text.split()[1] if len(message.text.split()) > 1 else None
+
+            if is_admin and not user_id:
                 # Get comprehensive bot analytics
                 analytics = await self.db.get_bot_analytics(
                     days=BotConstants.DEFAULT_ANALYTICS_DAYS
@@ -241,14 +243,25 @@ class BotEventHandler:
                     ),
                 )
             else:
+                if not user_id or not is_admin:
+                    user_id = message.from_user.id
                 # Get user-specific stats
                 user_stats = await self.db.get_user_activity_stats(
-                    message.from_user.id, days=BotConstants.DEFAULT_ANALYTICS_DAYS
+                    user_id, days=BotConstants.DEFAULT_ANALYTICS_DAYS
+                )
+                total_tokens = sum(
+                    [
+                        item["activity_data"].get("total_tokens", 0)
+                        for item in await self.db.get_message_activity_user_stats(
+                            user_id
+                        )
+                    ]
                 )
                 stats_text = const.USER_STATS_MESSAGE.format(
                     analytics_days=BotConstants.DEFAULT_ANALYTICS_DAYS,
                     total_messages=user_stats["total_messages"],
                     total_commands=user_stats["total_commands"],
+                    total_tokens=total_tokens,
                     first_interaction=user_stats["first_interaction"][:10]
                     if user_stats["first_interaction"]
                     else "Unknown",
@@ -266,6 +279,8 @@ class BotEventHandler:
         except DatabaseError as e:
             self.logger.error(f"Database error in stats command: {e}")
             await message.answer(const.STATISTICS_ERROR)
+            if is_admin:
+                await message.answer(str(e))
 
     async def handle_admin_command(self, message: Message):
         """
@@ -775,14 +790,6 @@ class BotEventHandler:
                 await message.answer(const.NO_ACTIVE_CHAT)
                 return
 
-            # Log user activity
-            await self.db.log_activity(
-                user_id=user_id,
-                activity_type=BotConstants.ACTIVITY_MESSAGE,
-                activity_data={"message_length": len(message.text or "")},
-                session_id=user.current_session_id,
-            )
-
             try:
                 session_manager: ChatSessionManager = ChatSessionManager(
                     session_id=user.current_session_id
@@ -817,9 +824,13 @@ class BotEventHandler:
             for output, response_type in agent.run(message.text):
                 await message.bot.send_chat_action(chat_id=user_id, action="typing")
                 if response_type == "partial":
+                    # replace ":" in the end with "..." to indicate thinking
+                    output = "...".join(output.rsplit(":", 1))
+
                     meta_message = await self._update_meta_message(
                         message, meta_message, output
                     )
+                    await message.bot.send_chat_action(chat_id=user_id, action="typing")
                 else:
                     response = output
 
@@ -832,10 +843,10 @@ class BotEventHandler:
                 parse_mode="HTML",
                 disable_notification=True,
             )
-            await message.bot.send_chat_action(chat_id=user_id, action="typing")
 
             # Split long messages into chunks
             while response:
+                await message.bot.send_chat_action(chat_id=user_id, action="typing")
                 chunk: str = response[: MAX_MESSAGE_LENGTH - 400]
                 response = response[MAX_MESSAGE_LENGTH - 400 :]
                 await message.answer(
@@ -853,6 +864,22 @@ class BotEventHandler:
             await message.answer(
                 "Sorry, I encountered an error processing your message. Please try again later."
             )
+        else:
+            # Log the message activity
+            try:
+                # Log user activity
+                await self.db.log_activity(
+                    user_id=user_id,
+                    activity_type=BotConstants.ACTIVITY_MESSAGE,
+                    activity_data={
+                        "message_length": len(message.text or ""),
+                        "response_length": len(response),
+                        "tokens_used": agent.total_tokens if agent else None,
+                    },
+                    session_id=user.current_session_id,
+                )
+            except DatabaseError as e:
+                self.logger.error(f"Database error logging message activity: {e}")
 
     @staticmethod
     async def _update_meta_message(
