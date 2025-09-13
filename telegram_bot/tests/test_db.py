@@ -1,8 +1,10 @@
 import pytest
 import tempfile
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import MagicMock
+import uuid
+import asyncio
 
 # Import the modules we're testing
 from telegram_bot.db import (
@@ -396,6 +398,298 @@ class TestAsyncUserDatabase:
         # Clean up with 0 days should delete all activities
         deleted_count = await database.cleanup_old_activities(days=0)
         assert deleted_count >= 0  # Should delete some or all activities
+
+    @pytest.mark.asyncio
+    async def test_deactivate_old_current_sessions_no_sessions(self, db):
+        """Test deactivate_old_current_sessions with no sessions - should return empty list"""
+        database = await db()
+        result = await database.deactivate_old_current_sessions(30)
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_deactivate_old_current_sessions_no_inactive_sessions(
+        self, db, sample_user, superadmin_user
+    ):
+        """Test deactivate_old_current_sessions with active sessions - should return empty list"""
+        database = await db()
+        await database.add_user(sample_user)
+        await database.add_user(superadmin_user)
+
+        # Create recent sessions for users
+        session_id_1 = str(uuid.uuid4())
+        session_id_2 = str(uuid.uuid4())
+
+        await database.create_chat_session(
+            sample_user.user_id, session_id_1, "Session 1"
+        )
+        await database.create_chat_session(
+            superadmin_user.user_id, session_id_2, "Session 2"
+        )
+
+        # Sessions are recent by default, so none should be deactivated with 30 minute cutoff
+        result = await database.deactivate_old_current_sessions(30)
+        assert result == []
+
+        # Verify users still have their current sessions
+        user1 = await database.get_user(sample_user.user_id)
+        user2 = await database.get_user(superadmin_user.user_id)
+        assert user1.current_session_id == session_id_1
+        assert user2.current_session_id == session_id_2
+
+    @pytest.mark.asyncio
+    async def test_deactivate_old_current_sessions_with_inactive_sessions(
+        self, db, sample_user, superadmin_user
+    ):
+        """Test deactivate_old_current_sessions with inactive sessions - should clear current_session_id"""
+        database = await db()
+        await database.add_user(sample_user)
+        await database.add_user(superadmin_user)
+
+        # Create sessions
+        session_id_1 = str(uuid.uuid4())
+        session_id_2 = str(uuid.uuid4())
+
+        await database.create_chat_session(
+            sample_user.user_id, session_id_1, "Old Session"
+        )
+        await database.create_chat_session(
+            superadmin_user.user_id, session_id_2, "Recent Session"
+        )
+
+        # Manually set old activity times by updating the database directly
+        old_time = datetime.now() - timedelta(minutes=45)  # 45 minutes ago
+        recent_time = datetime.now() - timedelta(minutes=15)  # 15 minutes ago
+
+        async with database.get_connection() as conn:
+            await conn.execute(
+                "UPDATE chat_sessions SET last_activity = ? WHERE session_id = ?",
+                (old_time.isoformat(), session_id_1),
+            )
+            await conn.execute(
+                "UPDATE chat_sessions SET last_activity = ? WHERE session_id = ?",
+                (recent_time.isoformat(), session_id_2),
+            )
+            await conn.commit()
+
+        # Test with 30 minute cutoff - session 1 should be deactivated
+        result = await database.deactivate_old_current_sessions(30)
+
+        # Should return user ID that was affected (sample_user.user_id)
+        assert len(result) == 1
+        assert sample_user.user_id in result
+        assert superadmin_user.user_id not in result
+
+        # Verify current_session_id was cleared for affected user
+        user1 = await database.get_user(sample_user.user_id)
+        user2 = await database.get_user(superadmin_user.user_id)
+
+        assert user1.current_session_id is None
+        assert user2.current_session_id == session_id_2  # Should still be set
+
+    @pytest.mark.asyncio
+    async def test_deactivate_old_current_sessions_mixed_scenarios(
+        self, db, sample_user, superadmin_user
+    ):
+        """Test mixed scenarios: users with no sessions, inactive sessions, and active sessions"""
+        database = await db()
+        await database.add_user(sample_user)
+        await database.add_user(superadmin_user)
+
+        # Create a third user with no session
+        user3 = User(
+            user_id=33333, username="user3", first_name="User", last_name="Three"
+        )
+        await database.add_user(user3)
+
+        # User 1: Has an inactive session
+        session_id_1 = str(uuid.uuid4())
+        await database.create_chat_session(
+            sample_user.user_id, session_id_1, "Inactive Session"
+        )
+
+        # User 2: Has an active session
+        session_id_2 = str(uuid.uuid4())
+        await database.create_chat_session(
+            superadmin_user.user_id, session_id_2, "Active Session"
+        )
+
+        # User 3: Has no current session (current_session_id is None by default)
+
+        # Set activity times
+        old_time = datetime.now() - timedelta(minutes=60)  # 1 hour ago
+        recent_time = datetime.now() - timedelta(minutes=10)  # 10 minutes ago
+
+        async with database.get_connection() as conn:
+            await conn.execute(
+                "UPDATE chat_sessions SET last_activity = ? WHERE session_id = ?",
+                (old_time.isoformat(), session_id_1),
+            )
+            await conn.execute(
+                "UPDATE chat_sessions SET last_activity = ? WHERE session_id = ?",
+                (recent_time.isoformat(), session_id_2),
+            )
+            await conn.commit()
+
+        # Test with 30 minute cutoff
+        result = await database.deactivate_old_current_sessions(30)
+
+        # Only sample_user should be affected
+        assert result == [sample_user.user_id]
+
+        # Verify states
+        user1 = await database.get_user(sample_user.user_id)
+        user2 = await database.get_user(superadmin_user.user_id)
+        user3 = await database.get_user(33333)
+
+        assert user1.current_session_id is None
+        assert user2.current_session_id == session_id_2
+        assert user3.current_session_id is None  # Was already None
+
+    @pytest.mark.asyncio
+    async def test_deactivate_old_current_sessions_zero_minutes(
+        self, db, sample_user, superadmin_user
+    ):
+        """Test with zero minutes cutoff - should deactivate all sessions"""
+        database = await db()
+        await database.add_user(sample_user)
+        await database.add_user(superadmin_user)
+
+        # Create sessions
+        session_id_1 = str(uuid.uuid4())
+        session_id_2 = str(uuid.uuid4())
+
+        await database.create_chat_session(
+            sample_user.user_id, session_id_1, "Session 1"
+        )
+        await database.update_chat_session_activity(session_id_1)  # Add recent activity
+        await database.create_chat_session(
+            superadmin_user.user_id, session_id_2, "Session 2"
+        )
+
+        # Even with recent activity, 0 minute cutoff should deactivate all
+        result = await database.deactivate_old_current_sessions(0)
+
+        # Only sample_user should be affected, as the superadmin's session doesn't have recent activity
+        assert len(result) == 1
+        assert sample_user.user_id in result
+        assert superadmin_user.user_id not in result
+
+        # Verify both current_session_ids were cleared
+        user1 = await database.get_user(sample_user.user_id)
+        user2 = await database.get_user(superadmin_user.user_id)
+
+        assert user1.current_session_id is None
+        assert user2.current_session_id is not None
+
+    @pytest.mark.asyncio
+    async def test_deactivate_old_current_sessions_edge_case_exactly_at_cutoff(
+        self, db, sample_user
+    ):
+        """Test edge case where session activity is exactly at the cutoff time"""
+        database = await db()
+        await database.add_user(sample_user)
+
+        # Create session
+        session_id = str(uuid.uuid4())
+        await database.create_chat_session(
+            sample_user.user_id, session_id, "Edge Case Session"
+        )
+
+        # Set activity time to exactly 30 minutes ago
+        cutoff_minutes = 30
+        exact_cutoff_time = datetime.now() - timedelta(minutes=cutoff_minutes)
+
+        async with database.get_connection() as conn:
+            await conn.execute(
+                "UPDATE chat_sessions SET last_activity = ? WHERE session_id = ?",
+                (exact_cutoff_time.isoformat(), session_id),
+            )
+            await conn.commit()
+
+        # Test with 30 minute cutoff
+        result = await database.deactivate_old_current_sessions(cutoff_minutes)
+
+        # The session should be deactivated since it's exactly at the cutoff (< not <=)
+        assert result == [sample_user.user_id]
+
+        user = await database.get_user(sample_user.user_id)
+        assert user.current_session_id is None
+
+    @pytest.mark.asyncio
+    async def test_deactivate_old_current_sessions_updated_at_field(
+        self, db, sample_user
+    ):
+        """Test that updated_at field is properly set when current_session_id is cleared"""
+        database = await db()
+        await database.add_user(sample_user)
+
+        # Get initial updated_at time
+        user_before = await database.get_user(sample_user.user_id)
+        initial_updated_at = user_before.updated_at
+
+        # Create session with old activity
+        session_id = str(uuid.uuid4())
+        await database.create_chat_session(
+            sample_user.user_id, session_id, "Old Session"
+        )
+
+        old_time = datetime.now() - timedelta(minutes=60)
+        async with database.get_connection() as conn:
+            await conn.execute(
+                "UPDATE chat_sessions SET last_activity = ? WHERE session_id = ?",
+                (old_time.isoformat(), session_id),
+            )
+            await conn.commit()
+
+        # Wait a moment to ensure timestamp difference
+        await asyncio.sleep(0.1)
+
+        # Deactivate old sessions
+        await database.deactivate_old_current_sessions(30)
+
+        # Check that updated_at was changed
+        user_after = await database.get_user(sample_user.user_id)
+        assert user_after.updated_at > initial_updated_at
+        assert user_after.current_session_id is None
+
+    @pytest.mark.asyncio
+    async def test_deactivate_old_current_sessions_multiple_users_same_cutoff(self, db):
+        """Test multiple users with sessions all at the same cutoff boundary"""
+        database = await db()
+
+        # Create multiple users
+        users = []
+        session_ids = []
+        for i in range(3):
+            user = User(user_id=1000 + i, username=f"user{i}", first_name=f"User{i}")
+            await database.add_user(user)
+            users.append(user)
+
+            session_id = str(uuid.uuid4())
+            await database.create_chat_session(user.user_id, session_id, f"Session {i}")
+            session_ids.append(session_id)
+
+        # Set all sessions to have the same old activity time
+        old_time = datetime.now() - timedelta(minutes=45)
+        async with database.get_connection() as conn:
+            for session_id in session_ids:
+                await conn.execute(
+                    "UPDATE chat_sessions SET last_activity = ? WHERE session_id = ?",
+                    (old_time.isoformat(), session_id),
+                )
+            await conn.commit()
+
+        # Test with 30 minute cutoff - all should be deactivated
+        result = await database.deactivate_old_current_sessions(30)
+
+        # All users should be affected
+        assert len(result) == 3
+        for user in users:
+            assert user.user_id in result
+
+            # Verify current_session_id was cleared
+            updated_user = await database.get_user(user.user_id)
+            assert updated_user.current_session_id is None
 
     def test_row_to_user_conversion(self, db):
         # Test the static method _row_to_user

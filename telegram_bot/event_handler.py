@@ -83,6 +83,7 @@ class BotEventHandler:
             self.handle_select_project_command, Command(commands=list(PROJECTS.keys()))
         )
         self.router.message.register(self.handle_my_chats_command, Command("my_chats"))
+        self.router.message.register(self.handle_chat_command, Command("chat"))
         self.router.message.register(self.handle_end_chat_command, Command("end_chat"))
 
         # General message handler (should be last)
@@ -607,6 +608,8 @@ class BotEventHandler:
             await self.db.update_user(
                 user_id=message.from_user.id, current_session_id=session_id
             )
+            # update session's last activity so it doesn't end immediately
+            await self.db.update_chat_session_activity(session_id)
 
             # Reset FSM state to handle new chat messages
             await state.set_state()

@@ -122,3 +122,8 @@ FORMATTING_RESPONSE_MESSAGE = "<i>Formatting response...</i> 📝"
 RESPONSE_END_MESSAGE = (
     "You can ask follow-up questions in this conversation or /start a new chat."
 )
+
+SESSION_EXPIRED_MESSAGE = (
+    "⏳ Your chat session has been finished.\n"
+    "You can /start a new one, or join an existing in /my_chats to ask follow ups."
+)

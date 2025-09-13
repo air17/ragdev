@@ -2,6 +2,7 @@ import asyncio
 
 from aiogram import Bot, Dispatcher
 from aiogram.types import BotCommand
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 import config
 from project_management.const import PROJECTS
@@ -11,6 +12,7 @@ from telegram_bot.db import (
 )
 from telegram_bot.event_handler import BotEventHandler
 from telegram_bot.middleware import DatabaseMiddleware
+from telegram_bot.tasks import end_inactive_sessions_task
 
 
 async def setup_production_bot():
@@ -49,6 +51,25 @@ async def setup_production_bot():
     event_handler = BotEventHandler(db)
     dp.include_router(event_handler.router)
 
+    # Initialize scheduler for periodic tasks
+    scheduler = AsyncIOScheduler()
+    scheduler.start()
+    scheduler.add_job(
+        db.cleanup_old_activities,
+        "interval",
+        days=1,
+        args=[BotConstants.DEFAULT_CLEANUP_DAYS],
+    )
+    scheduler.add_job(
+        end_inactive_sessions_task,
+        "interval",
+        kwargs={"db": db, "bot": bot},
+        minutes=1,
+        max_instances=1,  # Prevent overlapping
+        coalesce=True,  # If delayed, skip missed runs
+        misfire_grace_time=30,  # How late is acceptable
+    )
+
     # Setup all available commands
     all_commands: list[BotCommand] = [
         BotCommand(command="/start", description="Start a new chat session"),
@@ -70,6 +91,7 @@ async def setup_production_bot():
         await db.cleanup_old_activities(
             days=BotConstants.DEFAULT_CLEANUP_DAYS
         )  # Final cleanup
+        scheduler.shutdown()
 
     # Register shutdown handler
     dp.shutdown.register(on_shutdown)

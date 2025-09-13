@@ -1,0 +1,39 @@
+import logging
+
+from aiogram import Bot
+
+from telegram_bot import const
+from telegram_bot.db import AsyncUserDatabase
+
+MINUTES_TO_END_SESSIONS = 30
+
+logger = logging.getLogger(__name__)
+
+
+async def end_inactive_sessions_task(
+    db: AsyncUserDatabase, bot: Bot, minutes: int = MINUTES_TO_END_SESSIONS
+) -> None:
+    """End chat sessions that have been inactive for a specified number of days.
+
+    This function checks for chat sessions that have not had any activity for the given number of minutes,
+    ends those sessions, and notifies the respective users via the Telegram bot.
+
+    Parameters
+    ----------
+    db : Database
+        The database instance to use for querying and updating sessions.
+    bot : Bot
+        The Telegram bot instance to send notifications.
+    minutes : int
+        The number of minutes of inactivity after which sessions should be ended.
+    """
+    user_ids: list[int] = await db.deactivate_old_current_sessions(minutes=minutes)
+    for user_id in user_ids:
+        try:
+            await bot.send_message(
+                chat_id=user_id,
+                text=const.SESSION_EXPIRED_MESSAGE,
+                disable_notification=True,
+            )
+        except Exception as e:
+            logger.info(f"Error sending inactivity message to user {user_id}: {e}")

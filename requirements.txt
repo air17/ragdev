@@ -1,5 +1,6 @@
 aiogram
 aiosqlite
+apscheduler
 bleach
 GitPython
 google-genai

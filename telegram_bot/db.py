@@ -1000,10 +1000,10 @@ class AsyncUserDatabase:
                 await conn.execute(
                     """
                     INSERT INTO chat_sessions
-                    (session_id, user_id, name, created_at, last_activity)
-                    VALUES (?, ?, ?, ?, ?)
+                    (session_id, user_id, name, created_at)
+                    VALUES (?, ?, ?, ?)
                     """,
-                    (session_id, user_id, name, now_iso, now_iso),
+                    (session_id, user_id, name, now_iso),
                 )
 
                 # Set session as current for the user
@@ -1134,17 +1134,70 @@ class AsyncUserDatabase:
             self.logger.error(f"Error fetching current session for user {user_id}: {e}")
             return None
 
-    async def update_chat_session_activity(self, session_id: str, message_count: int):
+    async def update_chat_session_activity(
+        self, session_id: str, message_count: int | None = None
+    ) -> None:
         """Update chat session last activity and message count"""
         try:
             async with self.get_connection() as conn:
-                await conn.execute(
-                    "UPDATE chat_sessions SET last_activity = ?, message_count = ? WHERE session_id = ?",
-                    (datetime.now().isoformat(), message_count, session_id),
-                )
+                if message_count is None:
+                    await conn.execute(
+                        "UPDATE chat_sessions SET last_activity = ? WHERE session_id = ?",
+                        (datetime.now().isoformat(), session_id),
+                    )
+                else:
+                    await conn.execute(
+                        "UPDATE chat_sessions SET last_activity = ?, message_count = ? WHERE session_id = ?",
+                        (datetime.now().isoformat(), message_count, session_id),
+                    )
                 await conn.commit()
         except Exception as e:
             self.logger.error(f"Error updating chat session activity: {e}")
+
+    async def deactivate_old_current_sessions(self, minutes: int) -> list[int]:
+        """
+        Clear current_session_id for users whose current session has been inactive for more than 'minutes'
+        Returns ids of users affected.
+        """
+        try:
+            async with self.get_connection() as conn:
+                cutoff_time: datetime = datetime.now() - timedelta(minutes=minutes)
+                cutoff_iso: str = cutoff_time.isoformat()
+
+                # Find users with inactive current sessions
+                async with conn.execute(
+                    """
+                    SELECT u.user_id
+                    FROM users u
+                    JOIN chat_sessions cs ON u.current_session_id = cs.session_id
+                    WHERE cs.last_activity < ? AND u.current_session_id IS NOT NULL
+                    """,
+                    (cutoff_iso,),
+                ) as cursor:
+                    rows = await cursor.fetchall()
+                    user_ids = [row[0] for row in rows]
+
+                if not user_ids:
+                    return []
+
+                # Clear current_session_id for these users
+                await conn.execute(
+                    f"""
+                    UPDATE users
+                    SET current_session_id = NULL, updated_at = ?
+                    WHERE user_id IN ({",".join(["?"] * len(user_ids))})
+                    """,
+                    [datetime.now().isoformat()] + user_ids,
+                )
+                await conn.commit()
+                self.logger.info(
+                    f"Cleared current_session_id for users: {user_ids} due to inactivity"
+                )
+                return user_ids
+
+        except Exception as e:
+            self.logger.error(f"Error clearing old current user sessions: {e}")
+            return []
 
 
 # Helper functions for aiogram integration
