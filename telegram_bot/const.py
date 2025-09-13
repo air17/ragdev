@@ -128,3 +128,5 @@ SESSION_EXPIRED_MESSAGE = (
     "⏳ Your chat session has been finished.\n"
     "You can /start a new one, or join an existing in /my_chats to ask follow ups."
 )
+
+GENERATION_STOPPED_MESSAGE = "🛑 Response generation has been stopped."

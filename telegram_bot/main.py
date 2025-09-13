@@ -41,6 +41,7 @@ async def setup_production_bot():
                 "/list_branches",
                 "/pull_current_branch",
                 "/chat",
+                "/stop",
             }.union({f"/{key}" for key in PROJECTS.keys()}),
         )
     )
@@ -85,6 +86,7 @@ async def setup_production_bot():
         BotCommand(command="/help", description="Show help information"),
         BotCommand(command="/my_chats", description="List all your chat sessions"),
         BotCommand(command="/end_chat", description="End the current chat session"),
+        BotCommand(command="/stop", description="Stop the current response"),
         BotCommand(command="/list_branches", description="List all branches"),
         BotCommand(command="/current_branch", description="Show current branch"),
         BotCommand(command="/pull_current_branch", description="Pull current branch"),

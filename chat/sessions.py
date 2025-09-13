@@ -142,3 +142,25 @@ class ChatSessionManager:
             p.unlink()
         else:
             logger.warning(f"Session file {p} does not exist and cannot be deleted.")
+
+    def fix_messages_after_interruption(self) -> None:
+        """Cleans up all the messages after the last assistant message or deletes all messages if no assistant message exists."""
+        p: Path = self._path(self.active_session)
+        data: type[TypedDict] = self.load_full(self.active_session)
+        messages: list[type[TypedDict]] = data.get("messages", [])
+        if not messages:
+            return
+        # Find the index of the last assistant message
+        last_assistant_index: int | None = None
+        for i in range(len(messages) - 1, -1, -1):
+            if messages[i].get("role") == "assistant":
+                last_assistant_index = i
+                break
+        if last_assistant_index is None:
+            # No assistant message found, clear all messages
+            data["messages"] = []
+        else:
+            # Retain messages up to and including the last assistant message
+            data["messages"] = messages[: last_assistant_index + 1]
+        data.setdefault("meta", {})["updated_at"] = _now()
+        self._write(p, data)

@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from datetime import datetime
+from typing import Any
 
 from aiogram import Router
 from aiogram.filters import CommandStart, Command
@@ -38,6 +39,10 @@ class BotEventHandler:
     """Example class showing database method calls for different Telegram events"""
 
     router: Router = Router()
+
+    cache: dict[str, Any] = {}
+    ONGOING_GENERATION_CACHE_KEY = "ongoing_generation"
+    STOP_GENERATION_CACHE_KEY = "stop_generation"
 
     def __init__(self, db: AsyncUserDatabase):
         self.db: AsyncUserDatabase = db
@@ -85,6 +90,7 @@ class BotEventHandler:
         self.router.message.register(self.handle_my_chats_command, Command("my_chats"))
         self.router.message.register(self.handle_chat_command, Command("chat"))
         self.router.message.register(self.handle_end_chat_command, Command("end_chat"))
+        self.router.message.register(self.handle_stop_command, Command("stop"))
 
         # General message handler (should be last)
         self.router.message.register(self.handle_chat_message)
@@ -779,12 +785,33 @@ class BotEventHandler:
             return False
         return True
 
+    async def handle_stop_command(self, message: Message, state: FSMContext):
+        """Handle /stop command to stop ongoing response generation"""
+        # get ongoing generation users from
+        ongoing_generation: set[int] = self.cache.get(
+            self.ONGOING_GENERATION_CACHE_KEY, set()
+        )
+        if message.from_user.id not in ongoing_generation:
+            await message.answer("No ongoing response generation to stop.")
+            return
+        # Add user to stopped generation set
+        stop_generation: set[int] = self.cache.setdefault(
+            self.STOP_GENERATION_CACHE_KEY, set()
+        )
+        stop_generation.add(message.from_user.id)
+
     async def handle_chat_message(self, message: Message, state: FSMContext):
         """Handle chat messages with the AI agent"""
         if await self.handle_current_state(message, state):
             return
 
         user_id: int = message.from_user.id
+
+        if user_id in self.cache.get(self.ONGOING_GENERATION_CACHE_KEY, set()):
+            await message.answer(
+                "⏳ Please wait, still generating a previous response..."
+            )
+            return
 
         try:
             # Check for active session
@@ -812,6 +839,11 @@ class BotEventHandler:
                 )
                 return
 
+            self.cache.setdefault(self.ONGOING_GENERATION_CACHE_KEY, set()).add(user_id)
+            self.cache.setdefault(self.STOP_GENERATION_CACHE_KEY, set()).discard(
+                user_id
+            )
+
             agent: ChatAgent = ChatAgent(
                 project_dir=session_manager.project_dir,
                 collection_name=session_manager.collection_name,
@@ -825,6 +857,11 @@ class BotEventHandler:
             meta_message: Message | None = None
             response: str = ""
             for output, response_type in agent.run(message.text):
+                if user_id in self.cache.get(self.STOP_GENERATION_CACHE_KEY, set()):
+                    await message.answer(const.GENERATION_STOPPED_MESSAGE)
+                    self.cache[self.STOP_GENERATION_CACHE_KEY].discard(user_id)
+                    session_manager.fix_messages_after_interruption()
+                    return
                 await message.bot.send_chat_action(chat_id=user_id, action="typing")
                 if response_type == "partial":
                     # replace ":" in the end with "..." to indicate thinking
@@ -864,9 +901,7 @@ class BotEventHandler:
 
         except Exception as e:
             self.logger.error(f"Error handling chat message: {e}", exc_info=True)
-            await message.answer(
-                "Sorry, I encountered an error processing your message. Please try again later."
-            )
+            await message.answer(const.REQUEST_ERROR)
         else:
             # Log the message activity
             try:
@@ -883,6 +918,8 @@ class BotEventHandler:
                 )
             except DatabaseError as e:
                 self.logger.error(f"Database error logging message activity: {e}")
+        finally:
+            self.cache[self.ONGOING_GENERATION_CACHE_KEY].discard(user_id)
 
     @staticmethod
     async def _update_meta_message(

@@ -96,3 +96,81 @@ def test_delete_session():
         ChatSessionManager.delete_session(
             sessions_dir=temp_dir, session_id="non-existent"
         )
+
+
+def test_fix_messages_after_interruption():
+    """Test fixing messages after interruption."""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        session = ChatSessionManager(sessions_dir=temp_dir)
+        session_id = "test-fix-messages"
+
+        # Test case 1: Messages after last assistant message should be removed
+        session.create_session(session_id=session_id)
+        test_messages = [
+            {"role": "user", "content": "Hello"},
+            {"role": "assistant", "content": "Hi there!"},
+            {"role": "user", "content": "How are you?"},
+            {"role": "user", "content": "Another user message"},
+        ]
+        session.append_messages(test_messages)
+
+        # Fix messages after interruption
+        session.fix_messages_after_interruption()
+
+        # Should only have messages up to and including the last assistant message
+        messages = session.get_messages()
+        assert len(messages) == 2
+        assert messages[0]["content"] == "Hello"
+        assert messages[1]["content"] == "Hi there!"
+        assert messages[1]["role"] == "assistant"
+
+        # Test case 2: No assistant messages - all messages should be cleared
+        session = ChatSessionManager(sessions_dir=temp_dir)
+        session_id_2 = "test-fix-messages-2"
+        session.create_session(session_id=session_id_2)
+        user_only_messages = [
+            {"role": "user", "content": "Hello"},
+            {"role": "user", "content": "How are you?"},
+            {"role": "user", "content": "Another message"},
+        ]
+        session.append_messages(user_only_messages)
+
+        # Fix messages after interruption
+        session.fix_messages_after_interruption()
+
+        # All messages should be cleared since no assistant messages exist
+        messages = session.get_messages()
+        assert len(messages) == 0
+
+        # Test case 3: Empty message list should remain empty
+        session = ChatSessionManager(sessions_dir=temp_dir)
+        session_id_3 = "test-fix-messages-3"
+        session.create_session(session_id=session_id_3)
+
+        # Fix messages on empty session
+        session.fix_messages_after_interruption()
+
+        # Should still be empty
+        messages = session.get_messages()
+        assert len(messages) == 0
+
+        # Test case 4: Last message is assistant message - no changes needed
+        session = ChatSessionManager(sessions_dir=temp_dir)
+        session_id_4 = "test-fix-messages-4"
+        session.create_session(session_id=session_id_4)
+        complete_conversation = [
+            {"role": "user", "content": "Hello"},
+            {"role": "assistant", "content": "Hi there!"},
+            {"role": "user", "content": "Thanks"},
+            {"role": "assistant", "content": "You're welcome!"},
+        ]
+        session.append_messages(complete_conversation)
+
+        # Fix messages after interruption
+        session.fix_messages_after_interruption()
+
+        # All messages should remain since last message is from assistant
+        messages = session.get_messages()
+        assert len(messages) == 4
+        assert messages[-1]["role"] == "assistant"
+        assert messages[-1]["content"] == "You're welcome!"
