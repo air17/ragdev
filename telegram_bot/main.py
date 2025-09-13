@@ -12,7 +12,7 @@ from telegram_bot.db import (
 )
 from telegram_bot.event_handler import BotEventHandler
 from telegram_bot.middleware import DatabaseMiddleware
-from telegram_bot.tasks import end_inactive_sessions_task
+from telegram_bot.tasks import end_inactive_sessions_task, clear_empty_sessions_task
 
 
 async def setup_production_bot():
@@ -54,12 +54,14 @@ async def setup_production_bot():
     # Initialize scheduler for periodic tasks
     scheduler = AsyncIOScheduler()
     scheduler.start()
+    # clean up old activity records daily
     scheduler.add_job(
         db.cleanup_old_activities,
         "interval",
         days=1,
         args=[BotConstants.DEFAULT_CLEANUP_DAYS],
     )
+    # end inactive sessions after 30 minutes of inactivity
     scheduler.add_job(
         end_inactive_sessions_task,
         "interval",
@@ -68,6 +70,13 @@ async def setup_production_bot():
         max_instances=1,  # Prevent overlapping
         coalesce=True,  # If delayed, skip missed runs
         misfire_grace_time=30,  # How late is acceptable
+    )
+    # clear empty sessions every day
+    scheduler.add_job(
+        clear_empty_sessions_task,
+        "interval",
+        kwargs={"db": db},
+        hours=12,
     )
 
     # Setup all available commands

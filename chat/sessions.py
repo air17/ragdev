@@ -1,8 +1,11 @@
+import logging
 import pickle
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TypedDict, Any
+
+logger: logging.Logger = logging.getLogger(__name__)
 
 
 def _now() -> str:
@@ -128,3 +131,14 @@ class ChatSessionManager:
         if total_tokens is not None:
             data["meta"]["total_tokens"] = total_tokens
         self._write(p, data)
+
+    @classmethod
+    def delete_session(
+        cls, sessions_dir: str = "sessions", session_id: str = ""
+    ) -> None:
+        """Delete a session by its ID."""
+        p: Path = Path(sessions_dir) / f"{session_id}.pickle"
+        if p.exists():
+            p.unlink()
+        else:
+            logger.warning(f"Session file {p} does not exist and cannot be deleted.")

@@ -72,3 +72,27 @@ def test_append_to_nonexistent_session():
     with tempfile.TemporaryDirectory() as temp_dir:
         with pytest.raises(FileNotFoundError):
             ChatSessionManager(sessions_dir=temp_dir, session_id="test-session")
+
+
+def test_delete_session():
+    """Test deleting a session."""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        # Create a session
+        session_id = "test-session-to-delete"
+        session = ChatSessionManager(sessions_dir=temp_dir)
+        session.create_session(session_id=session_id)
+
+        # Verify session exists
+        session_file = Path(temp_dir) / f"{session_id}.pickle"
+        assert session_file.exists()
+
+        # Delete the session
+        ChatSessionManager.delete_session(sessions_dir=temp_dir, session_id=session_id)
+
+        # Verify session is deleted
+        assert not session_file.exists()
+
+        # Test deleting non-existent session (should not raise an error)
+        ChatSessionManager.delete_session(
+            sessions_dir=temp_dir, session_id="non-existent"
+        )

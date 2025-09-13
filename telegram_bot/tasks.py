@@ -2,6 +2,7 @@ import logging
 
 from aiogram import Bot
 
+from chat.sessions import ChatSessionManager
 from telegram_bot import const
 from telegram_bot.db import AsyncUserDatabase
 
@@ -37,3 +38,17 @@ async def end_inactive_sessions_task(
             )
         except Exception as e:
             logger.info(f"Error sending inactivity message to user {user_id}: {e}")
+
+
+async def clear_empty_sessions_task(db: AsyncUserDatabase) -> None:
+    """Clear empty chat sessions from the database and file system.
+
+    db : Database
+        The database instance to use for querying and deleting empty sessions.
+    """
+    session_ids: list[str] = await db.delete_empty_chat_sessions(days=1)
+    for session_id in session_ids:
+        try:
+            ChatSessionManager.delete_session(session_id)
+        except Exception as e:
+            logger.error(f"Error deleting empty session {session_id}: {e}")

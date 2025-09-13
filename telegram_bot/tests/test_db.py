@@ -691,6 +691,210 @@ class TestAsyncUserDatabase:
             updated_user = await database.get_user(user.user_id)
             assert updated_user.current_session_id is None
 
+    @pytest.mark.asyncio
+    async def test_delete_empty_chat_sessions(self, db, sample_user, superadmin_user):
+        """Test delete_empty_chat_sessions - should delete empty sessions older than specified days"""
+        database = await db()
+        await database.add_user(sample_user)
+        await database.add_user(superadmin_user)
+
+        # Create sessions with different scenarios
+        old_empty_session_id = str(uuid.uuid4())
+        recent_empty_session_id = str(uuid.uuid4())
+        old_session_with_messages_id = str(uuid.uuid4())
+        recent_session_with_messages_id = str(uuid.uuid4())
+
+        # Create old empty session (8 days ago)
+        await database.create_chat_session(
+            sample_user.user_id, old_empty_session_id, "Old Empty Session"
+        )
+
+        # Create recent empty session (3 days ago)
+        await database.create_chat_session(
+            sample_user.user_id, recent_empty_session_id, "Recent Empty Session"
+        )
+
+        # Create old session with messages (10 days ago)
+        await database.create_chat_session(
+            superadmin_user.user_id,
+            old_session_with_messages_id,
+            "Old Session With Messages",
+        )
+
+        # Create recent session with messages (2 days ago)
+        await database.create_chat_session(
+            superadmin_user.user_id,
+            recent_session_with_messages_id,
+            "Recent Session With Messages",
+        )
+
+        # Manually set creation times to simulate old sessions
+        old_time = datetime.now() - timedelta(days=8)
+        very_old_time = datetime.now() - timedelta(days=10)
+        recent_time_1 = datetime.now() - timedelta(days=3)
+        recent_time_2 = datetime.now() - timedelta(days=2)
+
+        async with database.get_connection() as conn:
+            # Set old empty session creation time
+            await conn.execute(
+                "UPDATE chat_sessions SET created_at = ? WHERE session_id = ?",
+                (old_time.isoformat(), old_empty_session_id),
+            )
+            # Set recent empty session creation time
+            await conn.execute(
+                "UPDATE chat_sessions SET created_at = ? WHERE session_id = ?",
+                (recent_time_1.isoformat(), recent_empty_session_id),
+            )
+            # Set old session with messages creation time and add message count
+            await conn.execute(
+                "UPDATE chat_sessions SET created_at = ?, message_count = 5 WHERE session_id = ?",
+                (very_old_time.isoformat(), old_session_with_messages_id),
+            )
+            # Set recent session with messages creation time and add message count
+            await conn.execute(
+                "UPDATE chat_sessions SET created_at = ?, message_count = 3 WHERE session_id = ?",
+                (recent_time_2.isoformat(), recent_session_with_messages_id),
+            )
+            await conn.commit()
+
+        # Test with 7 days cutoff - should only delete old empty session
+        deleted_sessions = await database.delete_empty_chat_sessions(days=7)
+
+        # Should return only the old empty session ID
+        assert len(deleted_sessions) == 1
+        assert old_empty_session_id in deleted_sessions
+        assert recent_empty_session_id not in deleted_sessions
+        assert old_session_with_messages_id not in deleted_sessions
+        assert recent_session_with_messages_id not in deleted_sessions
+
+        # Verify sessions in database
+        sessions_user1 = await database.list_chat_sessions(sample_user.user_id)
+        sessions_user2 = await database.list_chat_sessions(superadmin_user.user_id)
+
+        # User 1 should have only the recent empty session
+        assert len(sessions_user1) == 1
+        assert sessions_user1[0].session_id == recent_empty_session_id
+
+        # User 2 should have both sessions (they have messages)
+        assert len(sessions_user2) == 2
+        session_ids_user2 = [s.session_id for s in sessions_user2]
+        assert old_session_with_messages_id in session_ids_user2
+        assert recent_session_with_messages_id in session_ids_user2
+
+    @pytest.mark.asyncio
+    async def test_delete_empty_chat_sessions_no_sessions(self, db):
+        """Test delete_empty_chat_sessions with no sessions - should return empty list"""
+        database = await db()
+        result = await database.delete_empty_chat_sessions(7)
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_delete_empty_chat_sessions_no_empty_sessions(self, db, sample_user):
+        """Test delete_empty_chat_sessions with no empty sessions - should return empty list"""
+        database = await db()
+        await database.add_user(sample_user)
+
+        # Create session with messages
+        session_id = str(uuid.uuid4())
+        await database.create_chat_session(
+            sample_user.user_id, session_id, "Session With Messages"
+        )
+
+        # Set old creation time and add messages
+        old_time = datetime.now() - timedelta(days=10)
+        async with database.get_connection() as conn:
+            await conn.execute(
+                "UPDATE chat_sessions SET created_at = ?, message_count = 5 WHERE session_id = ?",
+                (old_time.isoformat(), session_id),
+            )
+            await conn.commit()
+
+        # Should not delete any sessions
+        deleted_sessions = await database.delete_empty_chat_sessions(days=7)
+        assert deleted_sessions == []
+
+        # Verify session still exists
+        sessions = await database.list_chat_sessions(sample_user.user_id)
+        assert len(sessions) == 1
+        assert sessions[0].session_id == session_id
+
+    @pytest.mark.asyncio
+    async def test_delete_empty_chat_sessions_mixed(
+        self, db, sample_user, superadmin_user
+    ):
+        """Test delete_empty_chat_sessions with mixed scenarios"""
+        database = await db()
+        await database.add_user(sample_user)
+        await database.add_user(superadmin_user)
+
+        # Create sessions
+        old_empty_session_id = str(uuid.uuid4())
+        recent_empty_session_id = str(uuid.uuid4())
+        old_session_with_messages_id = str(uuid.uuid4())
+        recent_session_with_messages_id = str(uuid.uuid4())
+
+        await database.create_chat_session(
+            sample_user.user_id, old_empty_session_id, "Old Empty Session"
+        )
+        await database.create_chat_session(
+            sample_user.user_id, recent_empty_session_id, "Recent Empty Session"
+        )
+        await database.create_chat_session(
+            superadmin_user.user_id,
+            old_session_with_messages_id,
+            "Old Session With Messages",
+        )
+        await database.create_chat_session(
+            superadmin_user.user_id,
+            recent_session_with_messages_id,
+            "Recent Session With Messages",
+        )
+
+        # Manually set creation times
+        old_time = datetime.now() - timedelta(days=8)
+        recent_time = datetime.now() - timedelta(days=3)
+
+        async with database.get_connection() as conn:
+            await conn.execute(
+                "UPDATE chat_sessions SET created_at = ? WHERE session_id = ?",
+                (old_time.isoformat(), old_empty_session_id),
+            )
+            await conn.execute(
+                "UPDATE chat_sessions SET created_at = ? WHERE session_id = ?",
+                (recent_time.isoformat(), recent_empty_session_id),
+            )
+            await conn.execute(
+                "UPDATE chat_sessions SET created_at = ?, message_count = 5 WHERE session_id = ?",
+                (old_time.isoformat(), old_session_with_messages_id),
+            )
+            await conn.execute(
+                "UPDATE chat_sessions SET created_at = ?, message_count = 3 WHERE session_id = ?",
+                (recent_time.isoformat(), recent_session_with_messages_id),
+            )
+            await conn.commit()
+
+        # Test with 7 days cutoff - should delete old empty session and keep others
+        deleted_sessions = await database.delete_empty_chat_sessions(days=7)
+
+        assert len(deleted_sessions) == 1
+        assert old_empty_session_id in deleted_sessions
+
+        # Verify remaining sessions
+        remaining_sessions_user1 = await database.list_chat_sessions(
+            sample_user.user_id
+        )
+        remaining_sessions_user2 = await database.list_chat_sessions(
+            superadmin_user.user_id
+        )
+
+        assert len(remaining_sessions_user1) == 1
+        assert remaining_sessions_user1[0].session_id == recent_empty_session_id
+
+        assert len(remaining_sessions_user2) == 2
+        session_ids_user2 = [s.session_id for s in remaining_sessions_user2]
+        assert old_session_with_messages_id in session_ids_user2
+        assert recent_session_with_messages_id in session_ids_user2
+
     def test_row_to_user_conversion(self, db):
         # Test the static method _row_to_user
         row_data = {

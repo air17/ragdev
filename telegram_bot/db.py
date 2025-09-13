@@ -1199,6 +1199,47 @@ class AsyncUserDatabase:
             self.logger.error(f"Error clearing old current user sessions: {e}")
             return []
 
+    async def delete_empty_chat_sessions(self, days: int = 7) -> list[str]:
+        """
+        Permanently delete chat sessions that have no messages and were created more than 'days' ago.
+        Returns deleted session_ids.
+        """
+        try:
+            async with self.get_connection() as conn:
+                cutoff_time: datetime = datetime.now() - timedelta(days=days)
+                cutoff_iso: str = cutoff_time.isoformat()
+
+                # Find empty sessions older than cutoff
+                async with conn.execute(
+                    """
+                    SELECT session_id
+                    FROM chat_sessions
+                    WHERE message_count = 0 AND created_at < ?
+                    """,
+                    (cutoff_iso,),
+                ) as cursor:
+                    rows = await cursor.fetchall()
+                    session_ids = [row[0] for row in rows]
+
+                if not session_ids:
+                    return []
+
+                # Delete these sessions
+                await conn.execute(
+                    f"""
+                    DELETE FROM chat_sessions
+                    WHERE session_id IN ({",".join(["?"] * len(session_ids))})
+                    """,
+                    session_ids,
+                )
+                await conn.commit()
+                self.logger.info(f"Permanently deleted empty sessions: {session_ids}")
+                return session_ids
+
+        except Exception as e:
+            self.logger.error(f"Error deleting empty chat sessions: {e}")
+            return []
+
 
 # Helper functions for aiogram integration
 def create_user_from_telegram(telegram_user) -> User:
