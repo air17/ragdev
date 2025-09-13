@@ -21,7 +21,7 @@ def markdown_to_telegram_html_ai(md_text):
         "In your final output should be valid HTML with only supported tags.\n"
         "If markdown input has no formatting, just return the plain text as is.\n"
         "If markdown input has syntax errors, like unclosed tags, try to fix them in the HTML output.\n"
-        "Never change the text content, only convert the formatting.\n"
+        "Never change the text content, only convert the formatting. Don't try to fix the content even if it seems broken.\n"
         "Don't include any extra text or explanations in your response!\n\n"
         "Markdown Input:"
     )

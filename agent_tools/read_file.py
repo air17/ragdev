@@ -46,9 +46,7 @@ def read_file(
         if start_line > len(lines):
             raise ValueError("start_line exceeds file length")
 
-        if end_line is None:
-            end_line = len(lines)
-        elif end_line > len(lines):
+        if end_line is None or end_line > len(lines):
             end_line = len(lines)
 
         if add_line_numbers:

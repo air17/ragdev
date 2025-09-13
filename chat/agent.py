@@ -19,6 +19,7 @@ from agent_tools.read_file import (
     scroll_up,
     scroll_down,
     read_file_with_context,
+    read_file,
 )
 from chat.const import SYSTEM_PROMPT
 from chat.sessions import ChatSessionManager
@@ -93,7 +94,19 @@ class ChatAgent:
                 type="function",
                 function=FunctionDefinition(
                     name="read_file",
-                    description="Read the contents of a file. The output of this tool call will be the 1-indexed file contents from start_line_one_indexed to end_line_one_indexed_inclusive, together with a summary of the lines outside start_line_one_indexed and end_line_one_indexed_inclusive.\\nNote that this call can view at most 250 lines at a time.\\n\\nWhen using this tool to gather information, it's your responsibility to ensure you have the COMPLETE context. Specifically, each time you call this command you should:\\n1) Assess if the contents you viewed are sufficient to proceed with your task.\\n2) Take note of where there are lines not shown.\\n3) If the file contents you have viewed are insufficient, and you suspect they may be in lines not shown, proactively call scroll_down or scroll_up tools to view those lines.\\n4) When in doubt, call this tool again to gather more information. Remember that partial file views may miss critical dependencies, imports, or functionality.",
+                    description=(
+                        "Read the contents of a file. The output of this tool call will be the 1-indexed file "
+                        "contents from start_line_one_indexed to end_line_one_indexed_inclusive.\\n"
+                        "Note that this call can view at most 250 lines at a time.\\n\\n"
+                        "When using this tool to gather information, it's your responsibility to ensure you "
+                        "have the COMPLETE context. Specifically, each time you call this command you should:\\n"
+                        "1) Assess if the contents you viewed are sufficient to proceed with your task.\\n"
+                        "2) Take note of where there are lines not shown.\\n"
+                        "3) If the file contents you have viewed are insufficient, and you suspect they may "
+                        "be in lines not shown, proactively call scroll_down or scroll_up tools to view those lines.\\n"
+                        "4) When in doubt, call this tool again to gather more information. Remember that "
+                        "partial file views may miss critical dependencies, imports, or functionality."
+                    ),
                     parameters={
                         "type": "object",
                         "required": ["path", "start_line_one_indexed"],
@@ -109,6 +122,10 @@ class ChatAgent:
                             "end_line_one_indexed_inclusive": {
                                 "type": "integer",
                                 "description": "The one-indexed line number to end reading at (inclusive). Optional. Default is 100.",
+                            },
+                            "with_context": {
+                                "type": "boolean",
+                                "description": "Whether to include a summary of the lines before and after the specified lines range. Default is false. Use it when you want more context about the specified file.",
                             },
                         },
                     },
@@ -350,16 +367,25 @@ class ChatAgent:
                 start_line: int | None = args.get("start_line_one_indexed") or args.get(
                     "start_line"
                 )
+                with_context: bool = args.get("with_context", False)
                 if not start_line:
                     raise ValueError("start_line is required")
                 # show additional 10 lines after end_line
                 if end_line:
                     end_line += 10
-                result = read_file_with_context(
-                    self.project_dir + "/" + args["path"],
-                    int(start_line),
-                    int(end_line) if end_line else None,
-                )
+                if with_context:
+                    result = read_file_with_context(
+                        self.project_dir + "/" + args["path"],
+                        int(start_line),
+                        int(end_line) if end_line else None,
+                    )
+                else:
+                    result = read_file(
+                        self.project_dir + "/" + args["path"],
+                        int(start_line),
+                        int(end_line) if end_line else start_line + 100,
+                        add_line_numbers=True,
+                    )
             elif tool == "list_dir":
                 result = ls(self.project_dir + "/" + args["path"])
             elif tool == "scroll_up":

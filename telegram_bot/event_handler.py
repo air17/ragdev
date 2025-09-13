@@ -873,7 +873,7 @@ class BotEventHandler:
                     activity_type=BotConstants.ACTIVITY_MESSAGE,
                     activity_data={
                         "message_length": len(message.text or ""),
-                        "response_length": len(response),
+                        "response_length": len(output),
                         "tokens_used": agent.total_tokens if agent else None,
                     },
                     session_id=user.current_session_id,
