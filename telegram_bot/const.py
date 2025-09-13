@@ -120,7 +120,8 @@ CHAT_ENDED_MESSAGE = "✅ Your current chat session has been ended."
 
 FORMATTING_RESPONSE_MESSAGE = "<i>Formatting response...</i> 📝"
 RESPONSE_END_MESSAGE = (
-    "You can ask follow-up questions in this conversation or /start a new chat."
+    "You can ask follow-up questions in this conversation or /start a new chat.\n"
+    "It's not recommended to ask more than 2 follow-ups in the same chat session."
 )
 
 SESSION_EXPIRED_MESSAGE = (
