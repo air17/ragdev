@@ -31,7 +31,7 @@ def test_chat_agent_with_custom_parameters(mock_openai):
     """Test that ChatAgent can be initialized with custom parameters."""
     agent = ChatAgent(
         project_dir="/test/project",
-        collection_name="test_collection",
+        # collection_name="test_collection",
         api_key="test_key",
         model="test-model",
         max_iterations=10,

@@ -846,7 +846,7 @@ class BotEventHandler:
 
             agent: ChatAgent = ChatAgent(
                 project_dir=session_manager.project_dir,
-                collection_name=session_manager.collection_name,
+                # collection_name=session_manager.collection_name,
                 session_manager=session_manager,
             )
 

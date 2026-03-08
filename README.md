@@ -1,14 +1,14 @@
 # RAG Development Project
 
-This project implements a Retrieval-Augmented Generation (RAG) system using Milvus for vector storage and Google's Gemini for embeddings. It's designed to process code files, chunk them intelligently, generate embeddings, and store them in a vector database for efficient retrieval.
+This project implements a Retrieval-Augmented Generation (RAG) system. The core RAG capabilities are now mostly based on powerful `grep` search for robust and exact code retrieval. Previously, it relied heavily on Milvus for vector storage and Google's Gemini for embeddings, which are now considered optional/obsolete features.
 
 ## Features
 
-- **Intelligent Code Chunking**: Parses Python files and splits them into meaningful chunks based on function definitions, class definitions, and code blocks
-- **Vector Embeddings**: Generates embeddings for code chunks using Google's Gemini API
-- **Vector Storage**: Stores embeddings and metadata in Milvus vector database
-- **Similarity Search**: Retrieves the most relevant code chunks for a given query
-- **Code Snippet Retrieval**: Returns actual code snippets along with search results for better context
+- **Grep-based Code Search**: Core RAG capability relies on grep for accurate and fast exact match code retrieval
+- **Telegram Bot Interface**: Interact with the system directly via Telegram
+- **Code Symbol Usage**: Functions to find symbol usages in Python code
+- **Intelligent Code Chunking** (Optional): Parses Python files and splits them into meaningful chunks based on function definitions, class definitions, and code blocks
+- **Vector Embeddings** (Optional/Obsolete): Generates embeddings for code chunks using Google's Gemini API and stores them in Milvus
 
 ## Installation
 
@@ -48,28 +48,7 @@ cp .env.example .env
 
 ### 2. Configure Your Environment Variables
 
-Edit the `.env` file and replace the placeholder values with your actual credentials:
-
-```
-# Milvus configuration
-MILVUS_ENDPOINT=https://your-milvus-endpoint.example.com
-MILVUS_TOKEN=your-milvus-token-here
-
-# Gemini configuration
-GEMINI_API_KEY=your-gemini-api-key-here
-
-# Default collection name
-DEFAULT_COLLECTION_NAME=code_chunks
-```
-
-### Environment Variables
-
-| Variable | Description | Required |
-|----------|-------------|----------|
-| MILVUS_ENDPOINT | URL endpoint for your Milvus instance | Yes |
-| MILVUS_TOKEN | Authentication token for Milvus | Yes |
-| GEMINI_API_KEY | API key for Google's Gemini AI service | Yes |
-| DEFAULT_COLLECTION_NAME | Default name for the Milvus collection | No (defaults to "code_chunks") |
+Edit the `.env` file and replace the placeholder values with your actual credentials.
 
 ## Usage
 
@@ -81,7 +60,6 @@ For development and testing, you can run the bot directly:
 python -c "import asyncio; from telegram_bot.main import setup_production_bot; asyncio.run(setup_production_bot())"
 ```
 
-
 Alternatively, you can use `nohup` to ensure the process continues even after closing the terminal:
 
 ```bash
@@ -90,6 +68,86 @@ nohup python -c "import asyncio; from telegram_bot.main import setup_production_
 
 # The process will continue running even after terminal disconnect
 ```
+
+## Configuration Management
+
+The project uses a centralized configuration system:
+
+- Environment variables are loaded from the `.env` file if it exists
+- If a variable is not found in the `.env` file, it falls back to system environment variables
+- Default values are provided as a last resort (not recommended for production)
+
+## Project Structure
+
+- `agent.py`: Agent functionality utilizing grep search for RAG
+- `main.py`: Convenience helpers
+- `telegram_bot/`: Code for the Telegram Bot interface
+- `find_usages/`: Package for finding symbol usages in Python code
+- `rag/`: Contains optional/obsolete chunking and embedding code (`chunker.py`, `embeddings.py`, `code_indexer.py`)
+- `config.py`: Centralizes configuration management
+- `tests/`: Project-level tests
+- `requirements.txt`: Lists project dependencies
+
+## Testing
+
+This project uses pytest for testing. Tests are organized in a modular structure:
+
+- Project-level tests in the `tests/` directory
+- Module-specific tests in `rag/tests/` and `find_usages/tests/` directories
+
+### Running Tests
+
+To run all tests:
+
+```bash
+pytest
+```
+
+To run tests for a specific module:
+
+```bash
+pytest rag/tests/
+pytest agent_tools/tests/
+```
+
+## Pre-commit Hooks
+
+This project uses pre-commit hooks to ensure code quality. The following hooks are configured:
+
+### Standard Hooks
+- `end-of-file-fixer`: Ensures files end with a newline
+- `trailing-whitespace`: Removes trailing whitespace
+- `detect-private-key`: Prevents committing private keys
+- `requirements-txt-fixer`: Sorts requirements.txt
+- `check-docstring-first`: Ensures docstrings come before code
+
+### Code Quality Hooks
+- `ruff`: Python linter with auto-fix capability
+- `ruff-format`: Python code formatter
+
+### Testing Hooks
+- `pytest`: Runs all tests on push (not on commit)
+
+### Installing Pre-commit Hooks
+
+```bash
+pip install pre-commit
+pre-commit install
+```
+
+This will ensure code quality checks run automatically before each commit, and tests run before each push.
+
+## Security Notes
+
+- Never commit your `.env` file to version control
+- The `.env` file is already included in `.gitignore`
+- For production deployments, use system environment variables or a secure secrets management service
+
+---
+
+## Obsolete / Optional Features (Milvus & Embeddings)
+
+*The following functionality was part of the original vector-based RAG strategy but is now largely superseded by grep-based search.*
 
 ### Managing Embeddings
 
@@ -182,80 +240,3 @@ for hit in hits_with_snippets:
     print(hit['snippet'])
     print("-" * 50)
 ```
-
-## Configuration Management
-
-The project uses a centralized configuration system:
-
-- Environment variables are loaded from the `.env` file if it exists
-- If a variable is not found in the `.env` file, it falls back to system environment variables
-- Default values are provided as a last resort (not recommended for production)
-
-## Project Structure
-
-- `main.py`: Convenience helpers – build indices, semantic search & find usages
-- `rag/chunker.py`: Handles parsing and chunking of Python files
-- `rag/embeddings.py`: Manages vector embeddings and Milvus operations
-- `rag/code_indexer.py`: Handles the indexing of code files
-- `rag/snippet_reader.py`: Extracts code snippets from files based on search results
-- `config.py`: Centralizes configuration management
-- `find_usages/`: Package for finding symbol usages in Python code
-- `tests/`: Project-level tests
-- `rag/tests/`: Tests for the RAG module
-- `find_usages/tests/`: Tests for the find_usages module
-- `requirements.txt`: Lists project dependencies
-
-## Testing
-
-This project uses pytest for testing. Tests are organized in a modular structure:
-
-- Project-level tests in the `tests/` directory
-- Module-specific tests in `rag/tests/` and `find_usages/tests/` directories
-
-### Running Tests
-
-To run all tests:
-
-```bash
-pytest
-```
-
-To run tests for a specific module:
-
-```bash
-pytest rag/tests/
-pytest agent_tools/tests/
-```
-
-## Pre-commit Hooks
-
-This project uses pre-commit hooks to ensure code quality. The following hooks are configured:
-
-### Standard Hooks
-- `end-of-file-fixer`: Ensures files end with a newline
-- `trailing-whitespace`: Removes trailing whitespace
-- `detect-private-key`: Prevents committing private keys
-- `requirements-txt-fixer`: Sorts requirements.txt
-- `check-docstring-first`: Ensures docstrings come before code
-
-### Code Quality Hooks
-- `ruff`: Python linter with auto-fix capability
-- `ruff-format`: Python code formatter
-
-### Testing Hooks
-- `pytest`: Runs all tests on push (not on commit)
-
-### Installing Pre-commit Hooks
-
-```bash
-pip install pre-commit
-pre-commit install
-```
-
-This will ensure code quality checks run automatically before each commit, and tests run before each push.
-
-## Security Notes
-
-- Never commit your `.env` file to version control
-- The `.env` file is already included in `.gitignore`
-- For production deployments, use system environment variables or a secure secrets management service
