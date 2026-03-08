@@ -5,6 +5,7 @@ bleach
 GitPython
 google-genai
 langchain
+langchain-classic
 langchain_deepseek
 numpy
 openai

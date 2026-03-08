@@ -1,4 +1,4 @@
-from langchain.retrievers.document_compressors import LLMListwiseRerank
+from langchain_classic.retrievers.document_compressors import LLMListwiseRerank
 from langchain_core.documents import Document
 from langchain_deepseek import ChatDeepSeek
 
