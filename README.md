@@ -1,14 +1,12 @@
 # RAG Development Project
 
-This project implements a Retrieval-Augmented Generation (RAG) system. The core RAG capabilities are now mostly based on powerful `grep` search for robust and exact code retrieval. Previously, it relied heavily on Milvus for vector storage and Google's Gemini for embeddings, which are now considered optional/obsolete features.
+This project implements a coding assistant delivered via a Telegram bot. The retrieval mechanism is **grep-based search** (ripgrep) for robust and exact code retrieval. Vector embeddings (Milvus + Gemini) were part of the original design but are now **deprecated** and no longer used by the agent.
 
 ## Features
 
-- **Grep-based Code Search**: Core RAG capability relies on grep for accurate and fast exact match code retrieval
+- **Grep-based Code Search**: Core retrieval capability — fast, exact, regex-aware
 - **Telegram Bot Interface**: Interact with the system directly via Telegram
-- **Code Symbol Usage**: Functions to find symbol usages in Python code
-- **Intelligent Code Chunking** (Optional): Parses Python files and splits them into meaningful chunks based on function definitions, class definitions, and code blocks
-- **Vector Embeddings** (Optional/Obsolete): Generates embeddings for code chunks using Google's Gemini API and stores them in Milvus
+- **Agentic Loop**: `ChatAgent` drives a multi-turn tool-use loop over DeepSeek LLM
 
 ## Installation
 
@@ -50,6 +48,18 @@ cp .env.example .env
 
 Edit the `.env` file and replace the placeholder values with your actual credentials.
 
+Required variables:
+
+| Variable | Description |
+|---|---|
+| `DEEPSEEK_API_KEY` | DeepSeek API key for the LLM |
+| `TELEGRAM_BOT_TOKEN` | Telegram bot token |
+| `MILVUS_ENDPOINT` | *(Deprecated)* Milvus cluster endpoint |
+| `MILVUS_TOKEN` | *(Deprecated)* Milvus authentication token |
+| `GEMINI_API_KEY` | *(Deprecated)* Gemini API key for embeddings |
+
+> `MILVUS_*` and `GEMINI_API_KEY` are only required if using the deprecated `rag/` modules directly. The bot itself no longer needs them.
+
 ## Usage
 
 ### Running the Telegram Bot
@@ -79,21 +89,30 @@ The project uses a centralized configuration system:
 
 ## Project Structure
 
-- `agent.py`: Agent functionality utilizing grep search for RAG
-- `main.py`: Convenience helpers
-- `telegram_bot/`: Code for the Telegram Bot interface
-- `find_usages/`: Package for finding symbol usages in Python code
-- `rag/`: Contains optional/obsolete chunking and embedding code (`chunker.py`, `embeddings.py`, `code_indexer.py`)
-- `config.py`: Centralizes configuration management
-- `tests/`: Project-level tests
-- `requirements.txt`: Lists project dependencies
+```
+chat/           Core agent logic (ChatAgent) and session persistence
+agent_tools/    Tool implementations: grep, read_file, file_list, llms
+telegram_bot/   aiogram v3 Telegram bot: auth, routing, scheduling
+project_management/  Registry of external projects and git helpers
+rag/            DEPRECATED — Milvus + Gemini vector embedding code
+config.py       Centralised configuration (reads .env then system env)
+requirements.txt  Project dependencies
+```
+
+### Key files
+
+- `chat/agent.py` — `ChatAgent`: full agentic loop, tool dispatch, message history
+- `chat/const.py` — `SYSTEM_PROMPT` template
+- `project_management/const.py` — `PROJECTS` registry
+- `telegram_bot/middleware.py` — `DatabaseMiddleware`: RBAC, fail-open design
+- `telegram_bot/db.py` — `AsyncUserDatabase` + `MigrationManager`
 
 ## Testing
 
 This project uses pytest for testing. Tests are organized in a modular structure:
 
 - Project-level tests in the `tests/` directory
-- Module-specific tests in `rag/tests/` and `find_usages/tests/` directories
+- Module-specific tests in `agent_tools/tests/`, `chat/tests/`, and `telegram_bot/tests/`
 
 ### Running Tests
 
@@ -106,8 +125,9 @@ pytest
 To run tests for a specific module:
 
 ```bash
-pytest rag/tests/
 pytest agent_tools/tests/
+pytest chat/tests/
+pytest telegram_bot/tests/
 ```
 
 ## Pre-commit Hooks
@@ -145,98 +165,18 @@ This will ensure code quality checks run automatically before each commit, and t
 
 ---
 
-## Obsolete / Optional Features (Milvus & Embeddings)
+## Deprecated: Milvus & Vector Embeddings (`rag/`)
 
-*The following functionality was part of the original vector-based RAG strategy but is now largely superseded by grep-based search.*
+> **These modules are deprecated.** They are no longer used by `ChatAgent` and will be removed in a future version. All public symbols emit a `DeprecationWarning` at runtime.
 
-### Managing Embeddings
+The `rag/` package contains the original vector-based retrieval strategy:
 
-#### Initial Setup - Generate Embeddings
-To generate embeddings for your project for the first time:
+| Module | Status |
+|---|---|
+| `rag/embeddings.py` — `EmbeddingManager` | Deprecated |
+| `rag/snippet_reader.py` — `read_snippets` | Deprecated |
+| `rag/reranker.py` — `rerank_results` | Deprecated |
+| `rag/chunker.py` — `chunk_file` | Deprecated |
+| `rag/code_indexer.py` — `index`, `process_directory` | Deprecated |
 
-```python
-from main import index_all
-
-# Generate embeddings for the current directory
-index_all()
-
-# Or for a specific directory
-index_all(directory="/path/to/your/project")
-```
-
-#### Regenerate Embeddings (Clear and Rebuild)
-To completely regenerate embeddings (useful when you want to start fresh or after major code changes), you can manually clear and rebuild embeddings:
-
-```python
-from main import index_all
-
-index_all(resume=False)
-```
-
-**Note**: Regenerating embeddings will:
-1. Delete the existing Milvus collection and all stored embeddings
-2. Create a fresh collection
-3. Process and index all files from scratch
-
-This is different from `index_all()` which resumes from previous progress by default.
-
-### Quick start with `main.py`
-
-```python
-from main import index_all, search_code, search_code_with_snippets
-
-# 1) build both indices (vector + symbol usages)
-index_all()  # or index_all(directory="/path/to/your/project")
-
-# 2) semantic code search
-results = search_code("How do I parse Python files?", top_k=5)
-for res in results:
-    print(res)
-
-# 3) semantic code search with snippets
-results_with_snippets = search_code_with_snippets("How do I parse Python files?", top_k=5)
-for res in results_with_snippets:
-    print(f"File: {res['entity']['filename']}, Lines: {res['entity']['start_line']}-{res['entity']['end_line']}")
-    print(f"Snippet:\n{res['snippet']}")
-    print("-" * 80)
-```
-
-### Indexing Code Files
-
-To index Python files in a directory:
-
-```python
-from main import index_all
-
-# Index files in the current directory (builds both indices)
-index_all()
-
-# Index files in a specific directory
-index_all(directory="/path/to/your/code")
-```
-
-### Retrieving Similar Code
-
-To retrieve code chunks similar to a query:
-
-```python
-from main import search_code
-
-hits = search_code("How do I parse Python files?", top_k=5)
-for hit in hits:
-    print(f"File: {hit['filename']}, Lines: {hit['start_line']}-{hit['end_line']}, score: {hit['score']}")
-```
-
-To retrieve code chunks with the actual code snippets:
-
-```python
-from main import search_code_with_snippets
-
-hits_with_snippets = search_code_with_snippets("How do I parse Python files?", top_k=5)
-for hit in hits_with_snippets:
-    print(f"File: {hit['entity']['filename']}, Lines: {hit['entity']['start_line']}-{hit['entity']['end_line']}")
-    print(f"Score: {hit['distance']}")
-    print("Code snippet:")
-    print(hit['snippet'])
-    print("-" * 50)
-```
+Similarly, `agent_tools/file_list.py:search_files_recursive` is deprecated and not exposed as an agent tool.

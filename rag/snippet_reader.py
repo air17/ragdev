@@ -1,3 +1,4 @@
+import warnings
 from pathlib import Path
 from typing import Iterable, Union
 
@@ -19,6 +20,9 @@ def read_snippets(
 ) -> list[EnrichedSearchResult]:
     """Return *matches* augmented with the corresponding code snippets.
 
+    .. deprecated::
+        This function is not used by ChatAgent and will be removed in a future version.
+
     Parameters
     ----------
     matches
@@ -37,6 +41,12 @@ def read_snippets(
         be resolved are silently omitted.
     """
     root = Path(base_dir) if base_dir is not None else None
+    warnings.warn(
+        "read_snippets is deprecated. Milvus-based semantic search is no longer "
+        "used by ChatAgent and will be removed in a future version.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     enriched_results: list[EnrichedSearchResult] = []
 
     for item in matches:

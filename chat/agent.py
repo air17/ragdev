@@ -27,16 +27,12 @@ from config import (
     DEEPSEEK_BASE_URL,
     DEEPSEEK_API_KEY,
 )
-from rag.embeddings import EmbeddingManager
-from rag.reranker import rerank_results
-from rag.snippet_reader import read_snippets
 
 
 class ChatAgent:
     def __init__(
         self,
         project_dir: str,
-        collection_name: str | None = None,
         api_key: str = DEEPSEEK_API_KEY,
         model: str = "deepseek-chat",
         max_iterations: int = 15,
@@ -52,11 +48,6 @@ class ChatAgent:
         self.deepseek: OpenAI = OpenAI(api_key=api_key, base_url=DEEPSEEK_BASE_URL)
         self.model: str = model
         self.project_dir: str = project_dir
-        self.embedding_manager = (
-            EmbeddingManager(collection_name=collection_name)
-            if collection_name
-            else None
-        )
 
         self.project_prompt: str | None = (
             session_manager.project_prompt if session_manager else None
@@ -212,30 +203,6 @@ class ChatAgent:
                 ),
             ),
         ]
-        if self.embedding_manager is not None:
-            self.tools.append(
-                ChatCompletionToolParam(
-                    type="function",
-                    function=FunctionDefinition(
-                        name="semantic_search",
-                        description="Find snippets of code from the codebase most relevant to the search query.\\nThis is a semantic search tool, so the query should ask for something semantically matching what is needed.\\nIf it makes sense to only search in particular directories, please specify them in the target_directories field.\\nUnless there is a clear reason to use your own search query, please just reuse the user's exact query with their wording.\\nTheir exact wording/phrasing can often be helpful for the semantic search query. Keeping the same exact question format can also be helpful.",
-                        parameters={
-                            "type": "object",
-                            "required": ["question"],
-                            "properties": {
-                                "question": {
-                                    "type": "string",
-                                    "description": "The search query to find relevant code.",
-                                },
-                                "dir_path": {
-                                    "type": "string",
-                                    "description": "The directory to search over (optional).",
-                                },
-                            },
-                        },
-                    ),
-                ),
-            )
         self.system_prompt = SYSTEM_PROMPT.format(
             project_tree=ls(self.project_dir),
             project_prompt=(
@@ -336,24 +303,7 @@ class ChatAgent:
 
     def dispatch_tool_call(self, tool, args) -> str:
         try:
-            if tool == "semantic_search":
-                if not self.embedding_manager:
-                    return "semantic_search tool is not available for this project. Don't use it."
-                vector_results = rerank_results(
-                    args["question"],
-                    read_snippets(
-                        self.embedding_manager.retrieve_vectors_for_question(
-                            args["question"], 10, args.get("dir_path", None)
-                        ),
-                        base_dir=self.project_dir,
-                    ),
-                    max_results=3,
-                )
-                for record in vector_results:
-                    record.pop("id", None)
-                    record.pop("distance", None)
-                result: str = json.dumps(vector_results)
-            elif tool == "grep_search":
+            if tool == "grep_search":
                 path: str = self.project_dir
                 if args.get("path"):
                     path += "/" + args["path"]

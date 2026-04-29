@@ -1,3 +1,5 @@
+import warnings
+
 import numpy as np
 from typing import TypedDict, Any
 from google.genai import types, Client as GenAIClient
@@ -67,6 +69,10 @@ class EmbeddingManager:
         vector_dimension: int = DEFAULT_VECTOR_DIMENSION,
     ):
         """
+        .. deprecated::
+            EmbeddingManager is deprecated. Milvus-based semantic search is no longer
+            used by ChatAgent and will be removed in a future version.
+
         Initialize the EmbeddingManager with Milvus and Gemini clients.
 
         Args:
@@ -74,6 +80,12 @@ class EmbeddingManager:
             milvus_token (str): Milvus authentication token
             gemini_api_key (str): Gemini API key
         """
+        warnings.warn(
+            "EmbeddingManager is deprecated. Milvus-based semantic search is no longer "
+            "used by ChatAgent and will be removed in a future version.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         self.milvus: MilvusClient = MilvusClient(
             uri=milvus_endpoint, token=milvus_token
         )

@@ -1,5 +1,6 @@
 import os
 import json
+import warnings
 from pathlib import Path
 
 from agent_tools.read_file import read_file
@@ -36,6 +37,9 @@ def process_directory(
     batch_size: int = DEFAULT_BATCH_SIZE,
 ) -> None:
     """
+    .. deprecated::
+        This function is not used by ChatAgent and will be removed in a future version.
+
     Process all files in a directory and its subdirectories, chunk them, and add them to the vector database.
     Skips directories in the exclusion lists and files starting with 'test'. Tracks already processed files to support resuming.
 
@@ -50,6 +54,12 @@ def process_directory(
         dir_exclusions (list[str]): List of directory names to exclude, defaults to DEFAULT_DIR_EXCLUSIONS.
         dir_within_parent_exclusions (list[tuple[str, str]]): List of (parent_dir, dir) pairs for special exclusions.
     """
+    warnings.warn(
+        "process_directory is deprecated and not used by ChatAgent. "
+        "It will be removed in a future version.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     # Get an absolute path if a relative path is provided
     abs_directory = os.path.abspath(directory)
     print(f"Processing files in {abs_directory}")
@@ -122,6 +132,9 @@ def process_file(
     indexed_files: set[str] | None = None,
 ):
     """
+    .. deprecated::
+        This function is not used by ChatAgent and will be removed in a future version.
+
     Process a single file and add its chunks to the vector database.
 
     Args:
@@ -134,6 +147,12 @@ def process_file(
         batch_size (int): Number of chunks to process in each batch, defaults to 20.
         indexed_files (set[str]): Set of previously indexed files, defaults to an empty set.
     """
+    warnings.warn(
+        "process_file is deprecated and not used by ChatAgent. "
+        "It will be removed in a future version.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     # Skip files with unsupported extensions
     file_ext = os.path.splitext(filename)[1].lower()
     if file_ext not in file_extensions:
@@ -199,6 +218,9 @@ def index(
     batch_size: int = DEFAULT_BATCH_SIZE,
 ) -> None:
     """
+    .. deprecated::
+        This function is not used by ChatAgent and will be removed in a future version.
+
     Main function to process files and add them to the vector database.
 
     Args:
@@ -209,6 +231,12 @@ def index(
         dir_within_parent_exclusions (tuple[tuple[str, str]]): List of parent-child directory name pairs to exclude.
         batch_size (int): Number of files to process in a single batch, defaults to 100.
     """
+    warnings.warn(
+        "index is deprecated and not used by ChatAgent. "
+        "It will be removed in a future version.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     manager: EmbeddingManager = EmbeddingManager(collection_name=collection_name)
 
     # Create a collection if it doesn't exist
@@ -235,6 +263,9 @@ def index(
 
 def reindex_files(collection_name: str, file_paths: set[str], project_dir: str):
     """
+    .. deprecated::
+        This function is not used by ChatAgent and will be removed in a future version.
+
     Reindex files in a given embedding collection by first deleting existing embeddings,
     then processing each file to regenerate embeddings.
 
@@ -243,6 +274,12 @@ def reindex_files(collection_name: str, file_paths: set[str], project_dir: str):
         file_paths (set[str]): A set of file paths to reindex.
         project_dir (str): The root directory of the project where the files reside.
     """
+    warnings.warn(
+        "reindex_files is deprecated and not used by ChatAgent. "
+        "It will be removed in a future version.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     manager: EmbeddingManager = EmbeddingManager(collection_name=collection_name)
     for file_path in file_paths:
         manager.delete_embeddings(file_path)

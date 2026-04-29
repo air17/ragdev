@@ -1,5 +1,6 @@
 import glob
 import os
+import warnings
 
 
 def ls(path: str = ".") -> str:
@@ -26,6 +27,9 @@ def search_files_recursive(
     pattern: str, directory: str = ".", root_dir: str | None = None
 ) -> str:
     """
+    .. deprecated::
+        This function is not used by ChatAgent and will be removed in a future version.
+
     Search for files recursively using glob patterns and return formatted results.
 
     Args:
@@ -36,6 +40,12 @@ def search_files_recursive(
     Returns:
         str: Formatted string with search results for LLM consumption
     """
+    warnings.warn(
+        "search_files_recursive is deprecated and not used by ChatAgent. "
+        "It will be removed in a future version.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     # Join directory and pattern with ** for recursive search
     search_path: str = os.path.join(directory, "**", pattern)
 

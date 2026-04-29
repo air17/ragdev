@@ -1,4 +1,5 @@
 import ast
+import warnings
 from typing import TypedDict, Literal
 
 
@@ -14,6 +15,9 @@ def split_node_into_chunks(
     max_func_lines: int,
 ) -> list[ChunkDict]:
     """
+    .. deprecated::
+        This function is not used by ChatAgent and will be removed in a future version.
+
     Split a function or method node into appropriate chunks.
 
     Args:
@@ -24,6 +28,12 @@ def split_node_into_chunks(
     Returns:
         List of chunk dictionaries
     """
+    warnings.warn(
+        "split_node_into_chunks is deprecated and not used by ChatAgent. "
+        "It will be removed in a future version.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     result = []
     length = node.end_lineno - node.lineno + 1
 
@@ -80,6 +90,9 @@ def chunk_file(
     path: str, max_lines: int = 40, max_func_lines: int = 70
 ) -> list[ChunkDict]:
     """
+    .. deprecated::
+        This function is not used by ChatAgent and will be removed in a future version.
+
     Parse a Python file and split it into chunks.
 
     - Top-level FunctionDef becomes its own chunk.
@@ -94,6 +107,12 @@ def chunk_file(
         - `end`: Ending line number of the chunk
         - `type`: Type of the chunk, either "FunctionDef", "ClassDef", "Method", or "Block".
     """
+    warnings.warn(
+        "chunk_file is deprecated and not used by ChatAgent. "
+        "It will be removed in a future version.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     with open(path, encoding="utf-8") as f:
         source = f.read()
 
