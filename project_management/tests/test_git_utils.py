@@ -96,7 +96,6 @@ class TestGetRepoChangedFilesForSwitch:
 
 
 class TestSwitchBranch:
-    @patch("project_management.git_utils.reindex_files")
     @patch("project_management.git_utils.switch_submodules_to_branch")
     @patch("project_management.git_utils.get_repo_changed_files_for_switch")
     @patch("project_management.git_utils.Repo")
@@ -105,7 +104,6 @@ class TestSwitchBranch:
         mock_repo_class,
         mock_get_changed_files,
         mock_switch_submodules,
-        mock_reindex,
     ):
         # Arrange
         mock_repo = Mock()
@@ -115,13 +113,10 @@ class TestSwitchBranch:
         mock_switch_submodules.return_value = {"file2.py"}
 
         # Act
-        switch_branch("collection", "/repo", "new_branch")
+        switch_branch("/repo", "new_branch")
 
         # Assert
         mock_repo.git.checkout.assert_called_once_with("new_branch")
-        mock_reindex.assert_called_once_with(
-            "collection", {"file1.py", "file2.py"}, "/repo"
-        )
 
     @patch("project_management.git_utils.Repo")
     def test_switch_branch_already_on_target(self, mock_repo_class, capsys):
@@ -131,38 +126,31 @@ class TestSwitchBranch:
         mock_repo_class.return_value = mock_repo
 
         # Act
-        switch_branch("collection", "/repo", "target_branch")
+        switch_branch("/repo", "target_branch")
 
         # Assert
         captured = capsys.readouterr()
         assert "already on branch" in captured.out.lower()
 
-    @patch("project_management.git_utils.reindex_files")
     @patch("project_management.git_utils.switch_submodules_to_branch")
-    @patch("project_management.git_utils.get_repo_changed_files_for_switch")
     @patch("project_management.git_utils.Repo")
     def test_switch_branch_no_changes(
         self,
         mock_repo_class,
-        mock_get_changed_files,
         mock_switch_submodules,
-        mock_reindex,
         capsys,
     ):
         # Arrange
         mock_repo = Mock()
         mock_repo.active_branch.name = "old_branch"
         mock_repo_class.return_value = mock_repo
-        mock_get_changed_files.return_value = set()
         mock_switch_submodules.return_value = set()
 
         # Act
-        switch_branch("collection", "/repo", "new_branch")
+        switch_branch("/repo", "new_branch")
 
         # Assert
-        captured = capsys.readouterr()
-        assert "no changed files found" in captured.out.lower()
-        mock_reindex.assert_not_called()
+        mock_repo.git.checkout.assert_called_once_with("new_branch")
 
 
 class TestPullRepository:
@@ -212,7 +200,9 @@ class TestPullRepository:
         assert len(result) == 3
         assert result[0] == old_commit
         assert result[1] == new_commit
-        mock_repo.git.pull.assert_called_once_with("--all", "--prune")
+        mock_repo.git.pull.assert_called_once_with(
+            "--all", "--prune", "--no-recurse-submodules"
+        )
 
 
 class TestGetChangedFiles:
@@ -257,42 +247,33 @@ class TestPullSubmodules:
 
 
 class TestPullCurrentBranch:
-    @patch("project_management.git_utils.reindex_files")
     @patch("project_management.git_utils.pull_submodules")
     @patch("project_management.git_utils.pull_repository")
-    @patch("project_management.git_utils.get_changed_files")
     @patch("project_management.git_utils.Repo")
     def test_pull_current_branch_with_changes(
         self,
         mock_repo_class,
-        mock_get_changed_files,
         mock_pull_repo,
         mock_pull_submodules,
-        mock_reindex,
     ):
         # Arrange
         mock_repo = Mock()
         mock_repo_class.return_value = mock_repo
-        mock_pull_repo.return_value = (Mock(), Mock())
-        mock_pull_repo.return_value = (Mock(), Mock(), "")  # Added third parameter
-        mock_pull_submodules.return_value = [
-            (Mock(), Mock(), "sub1/")
-        ]  # Added third parameter
+        mock_pull_repo.return_value = (Mock(), Mock(), "")
+        mock_pull_submodules.return_value = [(Mock(), Mock(), "sub1/")]
 
         # Act
-        pull_current_branch("collection", "/repo")
+        pull_current_branch("/repo")
 
         # Assert
-        mock_reindex.assert_called_once()
+        mock_pull_repo.assert_called_once()
 
     @patch("project_management.git_utils.pull_submodules")
     @patch("project_management.git_utils.pull_repository")
-    @patch("project_management.git_utils.get_changed_files")
     @patch("project_management.git_utils.Repo")
     def test_pull_current_branch_no_changes(
         self,
         mock_repo_class,
-        mock_get_changed_files,
         mock_pull_repo,
         mock_pull_submodules,
         capsys,
@@ -300,16 +281,15 @@ class TestPullCurrentBranch:
         # Arrange
         mock_repo = Mock()
         mock_repo_class.return_value = mock_repo
-        mock_pull_repo.return_value = (Mock(), Mock())
-        mock_pull_repo.return_value = (Mock(), Mock(), "")  # Added third parameter
-        mock_get_changed_files.return_value = set()
+        mock_pull_repo.return_value = (Mock(), Mock(), "")
+        mock_pull_submodules.return_value = []
 
         # Act
-        pull_current_branch("collection", "/repo")
+        pull_current_branch("/repo")
 
         # Assert
         captured = capsys.readouterr()
-        assert "no changes detected" in captured.out.lower()
+        assert "pulled successfully" in captured.out.lower()
 
 
 class TestGetCurrentBranch:

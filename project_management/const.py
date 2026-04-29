@@ -6,7 +6,6 @@ import config
 class ProjectInfo(TypedDict):
     name: str
     project_dir: str
-    collection_name: str | None
     submodules: tuple[str, ...]
     project_prompt: str
     repo_url: str | None
@@ -44,7 +43,6 @@ PROJECTS: dict[str, ProjectInfo] = {
     "business_web": ProjectInfo(
         name="Business Web",
         project_dir=config.BUSINESS_WEB_PROJECT_DIR,
-        collection_name=config.BUSINESS_WEB_COLLECTION_NAME,
         submodules=("jl_main_project", "jetlend_models", "config-containers"),
         project_prompt=BUSINESS_WEB_PROJECT_PROMPT,
         repo_url="https://gitlab.jetlend.ru/backend/business-web/-/blob/master/",
@@ -52,7 +50,6 @@ PROJECTS: dict[str, ProjectInfo] = {
     "client_web": ProjectInfo(
         name="Client Web",
         project_dir=config.CLIENT_WEB_PROJECT_DIR,
-        collection_name=config.CLIENT_WEB_COLLECTION_NAME,
         submodules=("jl_main_project", "jetlend_models", "config-containers"),
         project_prompt=CLIENT_WEB_PROJECT_PROMPT,
         repo_url=None,
@@ -60,7 +57,6 @@ PROJECTS: dict[str, ProjectInfo] = {
     "jetlend_core": ProjectInfo(
         name="Jetlend Core",
         project_dir=config.JETLEND_CORE_PROJECT_DIR,
-        collection_name=config.JETLEND_CORE_COLLECTION_NAME,
         submodules=("jetlend_backend", "jetlend_models", "config-containers"),
         project_prompt=JETLEND_CORE_PROJECT_PROMPT,
         repo_url="https://gitlab.jetlend.ru/backend/jetlend-core/-/blob/master/",
@@ -68,7 +64,6 @@ PROJECTS: dict[str, ProjectInfo] = {
     "underwriter_web": ProjectInfo(
         name="Underwriter Web",
         project_dir=config.UNDERWRITER_WEB_PROJECT_DIR,
-        collection_name=config.UNDERWRITER_WEB_COLLECTION_NAME,
         submodules=("jl_main_project", "jetlend_models", "config-containers"),
         project_prompt=UNDERWRITER_WEB_PROJECT_PROMPT,
         repo_url="https://gitlab.jetlend.ru/backend/jetlend_underwriter_web/-/blob/master/",
@@ -76,7 +71,6 @@ PROJECTS: dict[str, ProjectInfo] = {
     "jetlend_business_frontend": ProjectInfo(
         name="Frontend Business",
         project_dir=config.FRONTEND_BUSINESS_PROJECT_DIR,
-        collection_name=config.FRONTEND_BUSINESS_COLLECTION_NAME,
         submodules=("jetlend_react_lib",),
         project_prompt="React frontend for borrower crowdlending platform Jetlend",
         repo_url="https://gitlab.jetlend.ru/frontend/jetlend_business_frontend/-/blob/master/",
@@ -84,7 +78,6 @@ PROJECTS: dict[str, ProjectInfo] = {
     "jetlend_underwriting_frontend": ProjectInfo(
         name="Frontend Underwriting",
         project_dir=config.FRONTEND_BUSINESS_PROJECT_DIR,
-        collection_name=config.FRONTEND_BUSINESS_COLLECTION_NAME,
         submodules=("jetlend_react_lib",),
         project_prompt="React frontend for underwriter admin panel at crowdlending platform Jetlend used for borrower assessment and loan approval",
         repo_url="https://gitlab.jetlend.ru/frontend/jetlend_underwriting_frontend/-/blob/master/",
@@ -92,7 +85,6 @@ PROJECTS: dict[str, ProjectInfo] = {
     "jetlend_partner_frontend": ProjectInfo(
         name="Frontend Partner",
         project_dir=config.FRONTEND_PARTNER_PROJECT_DIR,
-        collection_name=config.FRONTEND_PARTNER_COLLECTION_NAME,
         submodules=("jetlend_react_lib",),
         project_prompt="React frontend for partner portal at Jetlend crowdlending platform used by partners to register referred borrowers and track their status",
         repo_url="https://gitlab.jetlend.ru/frontend/jetlend_partner_frontend/-/blob/master/",
@@ -100,7 +92,6 @@ PROJECTS: dict[str, ProjectInfo] = {
     "jetlend_client_frontend": ProjectInfo(
         name="Frontend Client",
         project_dir=config.FRONTEND_CLIENT_PROJECT_DIR,
-        collection_name=config.FRONTEND_CLIENT_COLLECTION_NAME,
         submodules=("jetlend_react_lib",),
         project_prompt="React frontend for investor portal at Jetlend crowdlending platform used by investors to browse and invest in loans",
         repo_url="https://gitlab.jetlend.ru/frontend/jetlend_client_frontend/-/blob/master/",
@@ -108,7 +99,6 @@ PROJECTS: dict[str, ProjectInfo] = {
     "jetlend_site_frontend": ProjectInfo(
         name="Frontend Jetlend Site",
         project_dir=config.FRONTEND_JETLEND_SITE_PROJECT_DIR,
-        collection_name=config.FRONTEND_JETLEND_SITE_COLLECTION_NAME,
         submodules=("jetlend_react_lib",),
         project_prompt="React frontend for Jetlend crowdlending platform landing page and information website",
         repo_url="https://gitlab.jetlend.ru/frontend/jetlend_site_ssr/-/blob/master/",

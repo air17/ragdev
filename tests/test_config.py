@@ -26,17 +26,14 @@ class TestConfig:
 
     def test_config_variables(self):
         # Test that config variables are loaded from environment
-        test_endpoint = "http://test-endpoint:19530"
-        test_collection = "test_collection"
+        test_dir = "/tmp/test-project"
 
         with patch.dict(
             os.environ,
             {
-                "MILVUS_ENDPOINT": test_endpoint,
-                "MILVUS_TOKEN": "test-token",
-                "GEMINI_API_KEY": "test-key",
-                "BUSINESS_WEB_COLLECTION_NAME": test_collection,
-                "USAGES_INDEX_FILE": "test-index.json",
+                "BUSINESS_WEB_PROJECT_DIR": test_dir,
+                "DEEPSEEK_API_KEY": "test-deepseek-key",
+                "TELEGRAM_BOT_TOKEN": "test-bot-token",
             },
         ):
             # Re-import to reload environment variables
@@ -46,4 +43,4 @@ class TestConfig:
             importlib.reload(config)
 
             # Check that variables match environment
-            assert config.MILVUS_ENDPOINT == test_endpoint
+            assert config.BUSINESS_WEB_PROJECT_DIR == test_dir

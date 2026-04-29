@@ -28,12 +28,9 @@ class ChatSessionManager:
         self.dir.mkdir(parents=True, exist_ok=True)
 
         if session_id:
-            # load project_dir and collection_name
+            # load project_dir and meta
             data: type[TypedDict] = self.load_full(session_id)
             self.project_dir: str | None = data.get("meta", {}).get("project_dir")
-            self.collection_name: str | None = data.get("meta", {}).get(
-                "collection_name"
-            )
             self.project_prompt: str | None = data.get("meta", {}).get("project_prompt")
             self.submodules: tuple[str, ...] = data.get("meta", {}).get(
                 "submodules", ()
@@ -57,7 +54,6 @@ class ChatSessionManager:
         initial: list[type[TypedDict]] | None = None,
         session_id: str | None = None,
         project_dir: str | None = None,
-        collection_name: str | None = None,
         project_prompt: str | None = None,
         submodules: tuple[str, ...] | None = None,
         repo_url: str | None = None,
@@ -67,7 +63,6 @@ class ChatSessionManager:
         meta: dict[str, str | None] = {
             "id": sid,
             "project_dir": project_dir,
-            "collection_name": collection_name,
             "project_prompt": project_prompt,
             "submodules": submodules or (),
             "repo_url": repo_url,
@@ -77,7 +72,6 @@ class ChatSessionManager:
         payload: type[TypedDict] = {"meta": meta, "messages": initial or []}
         self._write(self._path(sid), payload)
         self.project_dir = project_dir
-        self.collection_name = collection_name
         self.project_prompt = project_prompt
         self.submodules = submodules or ()
         self.repo_url = repo_url
@@ -96,7 +90,6 @@ class ChatSessionManager:
                         "id": meta.get("id", p.stem),
                         "updated_at": meta.get("updated_at"),
                         "project_dir": meta.get("project_dir"),
-                        "collection_name": meta.get("collection_name"),
                         "total_tokens": meta.get("total_tokens"),
                     }
                 )

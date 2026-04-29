@@ -32,65 +32,37 @@ def get_env_variable(name: str, default: Optional[str] = None) -> str:
     return value
 
 
-# Milvus configuration
-MILVUS_ENDPOINT = get_env_variable("MILVUS_ENDPOINT")
-MILVUS_TOKEN = get_env_variable("MILVUS_TOKEN")
-
-# Gemini configuration
-GEMINI_API_KEY = get_env_variable("GEMINI_API_KEY")
-
-# Default collections names and project directories
-BUSINESS_WEB_COLLECTION_NAME = get_env_variable("BUSINESS_WEB_COLLECTION_NAME", "")
+# Default project directories
 BUSINESS_WEB_PROJECT_DIR = get_env_variable(
     "BUSINESS_WEB_PROJECT_DIR", "../business-web"
 )
 
-CLIENT_WEB_COLLECTION_NAME = get_env_variable("CLIENT_WEB_COLLECTION_NAME", "")
 CLIENT_WEB_PROJECT_DIR = get_env_variable("CLIENT_WEB_PROJECT_DIR", "../client_web")
 
-JETLEND_CORE_COLLECTION_NAME = get_env_variable("JETLEND_CORE_COLLECTION_NAME", "")
 JETLEND_CORE_PROJECT_DIR = get_env_variable(
     "JETLEND_CORE_PROJECT_DIR", "../jetlend-core"
 )
 
-UNDERWRITER_WEB_COLLECTION_NAME = get_env_variable(
-    "UNDERWRITER_WEB_COLLECTION_NAME", ""
-)
 UNDERWRITER_WEB_PROJECT_DIR = get_env_variable(
     "UNDERWRITER_WEB_PROJECT_DIR", "../underwriter-web"
 )
 
-FRONTEND_BUSINESS_COLLECTION_NAME = get_env_variable(
-    "FRONTEND_BUSINESS_COLLECTION_NAME", ""
-)
 FRONTEND_BUSINESS_PROJECT_DIR = get_env_variable(
     "FRONTEND_BUSINESS_PROJECT_DIR", "../jetlend_business_frontend"
 )
 
-FRONTEND_UNDERWRITING_COLLECTION_NAME = get_env_variable(
-    "FRONTEND_UNDERWRITING_COLLECTION_NAME", ""
-)
 FRONTEND_UNDERWRITING_PROJECT_DIR = get_env_variable(
     "FRONTEND_UNDERWRITING_PROJECT_DIR", "../jetlend_underwriting_frontend"
 )
 
-FRONTEND_PARTNER_COLLECTION_NAME = get_env_variable(
-    "FRONTEND_PARTNER_COLLECTION_NAME", ""
-)
 FRONTEND_PARTNER_PROJECT_DIR = get_env_variable(
     "FRONTEND_PARTNER_PROJECT_DIR", "../jetlend_partner_frontend"
 )
 
-FRONTEND_CLIENT_COLLECTION_NAME = get_env_variable(
-    "FRONTEND_CLIENT_COLLECTION_NAME", ""
-)
 FRONTEND_CLIENT_PROJECT_DIR = get_env_variable(
     "FRONTEND_CLIENT_PROJECT_DIR", "../jetlend_client_frontend"
 )
 
-FRONTEND_JETLEND_SITE_COLLECTION_NAME = get_env_variable(
-    "FRONTEND_JETLEND_SITE_COLLECTION_NAME", ""
-)
 FRONTEND_JETLEND_SITE_PROJECT_DIR = get_env_variable(
     "FRONTEND_JETLEND_SITE_PROJECT_DIR", "../jetlend_site_ssr"
 )

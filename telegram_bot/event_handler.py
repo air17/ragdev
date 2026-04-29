@@ -643,7 +643,6 @@ class BotEventHandler:
             # Create new session
             session_id = ChatSessionManager().create_session(
                 project_dir=project_info["project_dir"],
-                collection_name=project_info["collection_name"],
                 project_prompt=project_info.get("project_prompt"),
                 repo_url=project_info.get("repo_url"),
                 submodules=project_info.get("submodules"),
@@ -999,7 +998,6 @@ class BotEventHandler:
         try:
             new_branch_name = message.text.split(" ")[1]
             switch_branch(
-                session_manager.collection_name,
                 session_manager.project_dir,
                 new_branch_name,
                 session_manager.submodules,
@@ -1037,9 +1035,7 @@ class BotEventHandler:
         if not session_manager:
             return await message.answer(const.NO_ACTIVE_CHAT)
         try:
-            pull_current_branch(
-                session_manager.collection_name, session_manager.project_dir
-            )
+            pull_current_branch(session_manager.project_dir)
             await message.answer("Current branch pulled.")
         except Exception as e:
             self.logger.error(

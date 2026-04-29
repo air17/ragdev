@@ -1,6 +1,4 @@
-from git import DiffIndex, Repo, Commit
-
-from rag.code_indexer import reindex_files
+from git import Commit, DiffIndex, Repo
 
 
 def switch_submodules_to_branch(
@@ -48,16 +46,14 @@ def get_repo_changed_files_for_switch(
 
 
 def switch_branch(
-    collection_name: str,
     repo_dir: str,
     new_branch_name: str,
     submodule_names: tuple[str, ...] = (),
 ) -> None:
     """
-    Switch to a new branch and all submodules, then reindex changed files.
+    Switch to a new branch and all submodules.
 
     Args:
-        collection_name: Name of the collection to reindex
         repo_dir: Path to the repository directory
         new_branch_name: Name of the branch to switch to
         submodule_names: Tuple of submodule names to switch to the new branch
@@ -72,27 +68,8 @@ def switch_branch(
     # Switch main repository
     repo.git.checkout(new_branch_name)
 
-    if not collection_name:
-        print("No collection name provided. Skipping reindexing.")
-        return
-
-    # Get all changed files from main repo
-    all_changed_files: set[str] = get_repo_changed_files_for_switch(
-        repo, current_branch, new_branch_name
-    )
-
-    # Switch all submodules to the new branch and get changed files
-    all_changed_files |= switch_submodules_to_branch(
-        repo_dir, new_branch_name, submodule_names
-    )
-
-    if not all_changed_files:
-        print("No changed files found. Skipping reindexing.")
-        return
-    print(f"Changed files: {all_changed_files}")
-
-    # Reindex the changed files
-    reindex_files(collection_name, all_changed_files, repo_dir)
+    # Switch all submodules to the new branch
+    switch_submodules_to_branch(repo_dir, new_branch_name, submodule_names)
 
 
 def pull_repository(repo: Repo, path_prefix: str) -> tuple[Commit, Commit, str]:
@@ -101,7 +78,7 @@ def pull_repository(repo: Repo, path_prefix: str) -> tuple[Commit, Commit, str]:
     current_branch: str = repo.active_branch.name
 
     old_remote_commit: Commit = repo.remotes[remote_name].refs[current_branch].commit
-    repo.git.pull("--all", "--prune")
+    repo.git.pull("--all", "--prune", "--no-recurse-submodules")
     new_remote_commit: Commit = repo.remotes[remote_name].refs[current_branch].commit
 
     return old_remote_commit, new_remote_commit, path_prefix
@@ -131,44 +108,23 @@ def pull_submodules(
     return old_new_commits
 
 
-def pull_current_branch(
-    collection_name: str, repo_dir: str, submodule_names: tuple[str, ...] = ()
-) -> None:
+def pull_current_branch(repo_dir: str, submodule_names: tuple[str, ...] = ()) -> None:
     """
-    Pull the current branch and all submodules, then reindex changed files.
+    Pull the current branch and all submodules.
 
     Args:
-        collection_name: Name of the collection to reindex
         repo_dir: Path to the repository directory
         submodule_names: Tuple of submodule names to pull
     """
     repo: Repo = Repo(repo_dir)
 
     # Pull main repository and get changed commits
-    old_new_commits: list[tuple[Commit, Commit, str]] = [pull_repository(repo, "")]
+    pull_repository(repo, "")
 
     # Pull all submodules
-    old_new_commits.extend(pull_submodules(repo_dir, submodule_names))
+    pull_submodules(repo_dir, submodule_names)
 
-    if not collection_name:
-        print("No collection name provided. Skipping reindexing.")
-        return
-
-    # Get all changed files from main repo and submodules
-    all_changed_files: set[str] = set()
-    for old_remote_commit, new_remote_commit, path_prefix in old_new_commits:
-        all_changed_files |= get_changed_files(
-            old_remote_commit, new_remote_commit, path_prefix
-        )
-
-    if not all_changed_files:
-        print("No changes detected in the repository.")
-        return
-    else:
-        print(f"Changed files: {all_changed_files}")
-
-    # Reindex the changed files
-    reindex_files(collection_name, all_changed_files, repo_dir)
+    print("Repository pulled successfully.")
 
 
 def get_current_branch(
