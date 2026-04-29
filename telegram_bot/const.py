@@ -130,3 +130,7 @@ SESSION_EXPIRED_MESSAGE = (
 )
 
 GENERATION_STOPPED_MESSAGE = "🛑 Response generation has been stopped."
+
+AUTO_PULL_FAILED_MESSAGE = (
+    "⚠️ Auto-pull failed for <b>{project_name}</b>:\n<code>{error}</code>"
+)

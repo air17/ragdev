@@ -1,9 +1,14 @@
+import asyncio
+import functools
 import logging
 
 from aiogram import Bot
 
 from chat.sessions import ChatSessionManager
+from project_management.const import PROJECTS
+from project_management.git_utils import pull_current_branch
 from telegram_bot import const
+from telegram_bot.const import BotConstants
 from telegram_bot.db import AsyncUserDatabase
 
 MINUTES_TO_END_SESSIONS = 30
@@ -52,3 +57,50 @@ async def clear_empty_sessions_task(db: AsyncUserDatabase) -> None:
             ChatSessionManager.delete_session(session_id)
         except Exception as e:
             logger.error(f"Error deleting empty session {session_id}: {e}")
+
+
+async def _notify_admins(bot: Bot, db: AsyncUserDatabase, text: str) -> None:
+    """Send a message to all superadmin users. Errors are logged and swallowed."""
+    try:
+        admins = await db.get_users_by_role(BotConstants.ROLE_SUPERADMIN)
+        for admin in admins:
+            try:
+                await bot.send_message(
+                    chat_id=admin.user_id, text=text, parse_mode="HTML"
+                )
+            except Exception as notify_err:
+                logger.warning(f"Failed to notify admin {admin.user_id}: {notify_err}")
+    except Exception as e:
+        logger.error(f"Failed to fetch admins for notification: {e}")
+
+
+async def pull_all_repos_task(bot: Bot, db: AsyncUserDatabase) -> None:
+    """Pull the current branch for every configured project every 3 hours.
+
+    Projects whose ``project_dir`` is empty or falsy are silently skipped.
+    On per-project failure all superadmins are notified via the bot.
+    """
+    loop: asyncio.AbstractEventLoop = asyncio.get_event_loop()
+    for slug, project in PROJECTS.items():
+        project_dir: str = project["project_dir"]
+        if not project_dir:
+            logger.debug(f"Skipping auto-pull for {slug}: project_dir not configured.")
+            continue
+        try:
+            await loop.run_in_executor(
+                None,
+                functools.partial(
+                    pull_current_branch, project_dir, project["submodules"]
+                ),
+            )
+            logger.info(f"Auto-pull succeeded for {slug}.")
+        except Exception as e:
+            logger.error(f"Auto-pull failed for {slug}: {e}", exc_info=True)
+            short_error: str = str(e)[:200]
+            await _notify_admins(
+                bot,
+                db,
+                const.AUTO_PULL_FAILED_MESSAGE.format(
+                    project_name=project["name"], error=short_error
+                ),
+            )

@@ -12,7 +12,11 @@ from telegram_bot.db import (
 )
 from telegram_bot.event_handler import BotEventHandler
 from telegram_bot.middleware import DatabaseMiddleware
-from telegram_bot.tasks import end_inactive_sessions_task, clear_empty_sessions_task
+from telegram_bot.tasks import (
+    end_inactive_sessions_task,
+    clear_empty_sessions_task,
+    pull_all_repos_task,
+)
 
 
 async def setup_production_bot():
@@ -78,6 +82,16 @@ async def setup_production_bot():
         "interval",
         kwargs={"db": db},
         hours=12,
+    )
+    # pull all repos every 3 hours
+    scheduler.add_job(
+        pull_all_repos_task,
+        "interval",
+        hours=3,
+        kwargs={"bot": bot, "db": db},
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=300,
     )
 
     # Setup all available commands
