@@ -182,3 +182,30 @@ class TestPullAllReposTask:
         for c in mock_bot.send_message.call_args_list:
             assert c.kwargs.get("parse_mode") == "HTML"
             assert "⚠️" in c.kwargs["text"]
+
+    @pytest.mark.asyncio
+    async def test_failure_message_escapes_html(self, mock_bot, mock_db, make_admin):
+        """Failure notification escapes project names and errors inside HTML."""
+        mock_db.get_users_by_role.return_value = [make_admin(1)]
+        projects_with_html = {
+            "proj_html": {
+                "name": "Project <A>",
+                "project_dir": "/repos/proj_html",
+                "submodules": (),
+                "project_prompt": "",
+                "repo_url": None,
+            }
+        }
+
+        with (
+            patch("telegram_bot.tasks.PROJECTS", projects_with_html),
+            patch(
+                "telegram_bot.tasks.pull_current_branch",
+                side_effect=RuntimeError("auth <failed> & retry"),
+            ),
+        ):
+            await pull_all_repos_task(mock_bot, mock_db)
+
+        sent_text: str = mock_bot.send_message.call_args.kwargs["text"]
+        assert "<b>Project &lt;A&gt;</b>" in sent_text
+        assert "<code>auth &lt;failed&gt; &amp; retry</code>" in sent_text

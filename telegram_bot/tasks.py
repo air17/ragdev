@@ -2,6 +2,7 @@ import asyncio
 import functools
 import logging
 
+import bleach
 from aiogram import Bot
 
 from chat.sessions import ChatSessionManager
@@ -96,11 +97,12 @@ async def pull_all_repos_task(bot: Bot, db: AsyncUserDatabase) -> None:
             logger.info(f"Auto-pull succeeded for {slug}.")
         except Exception as e:
             logger.error(f"Auto-pull failed for {slug}: {e}", exc_info=True)
-            short_error: str = str(e)[:200]
+            project_name: str = bleach.clean(project["name"], tags=set(), strip=False)
+            short_error: str = bleach.clean(str(e)[:200], tags=set(), strip=False)
             await _notify_admins(
                 bot,
                 db,
                 const.AUTO_PULL_FAILED_MESSAGE.format(
-                    project_name=project["name"], error=short_error
+                    project_name=project_name, error=short_error
                 ),
             )

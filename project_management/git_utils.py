@@ -1,6 +1,10 @@
 from git import Commit, DiffIndex, Repo
 
 
+class SubmodulePullError(RuntimeError):
+    """Raised when one or more submodules fail to pull."""
+
+
 def switch_submodules_to_branch(
     repo_dir: str, new_branch_name: str, submodule_names: tuple[str, ...]
 ) -> set[str]:
@@ -97,14 +101,15 @@ def pull_submodules(
 ) -> list[tuple[Commit, Commit, str]]:
     """Pull all submodules in the repository."""
     old_new_commits: list[tuple[Commit, Commit, str]] = []
+    errors: list[str] = []
     for submodule_name in submodule_names:
         try:
             repo: Repo = Repo(repo_dir + "/" + submodule_name)
             old_new_commits.append(pull_repository(repo, f"{submodule_name}/"))
         except Exception as e:
-            print(
-                f"Warning: Failed to pull repository in submodule {submodule_name}: {e}"
-            )
+            errors.append(f"{submodule_name}: {e}")
+    if errors:
+        raise SubmodulePullError("Failed to pull submodules: " + "; ".join(errors))
     return old_new_commits
 
 

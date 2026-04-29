@@ -8,6 +8,7 @@ from project_management.git_utils import (
     get_repo_changed_files_for_switch,
     switch_branch,
     pull_repository,
+    SubmodulePullError,
     get_changed_files,
     pull_submodules,
     pull_current_branch,
@@ -237,6 +238,21 @@ class TestPullSubmodules:
         assert isinstance(result, list)
         assert len(result) == 2
         assert mock_pull_repo.call_count == 2
+
+    @patch("project_management.git_utils.Repo")
+    @patch("project_management.git_utils.pull_repository")
+    def test_pull_submodules_failure_raises_after_attempting_all(
+        self, mock_pull_repo, mock_repo_class
+    ):
+        # Arrange
+        mock_pull_repo.side_effect = [RuntimeError("auth failed"), (Mock(), Mock(), "")]
+
+        # Act / Assert
+        with pytest.raises(SubmodulePullError) as exc_info:
+            pull_submodules("/repo", ("submodule1", "submodule2"))
+
+        assert mock_pull_repo.call_count == 2
+        assert "submodule1: auth failed" in str(exc_info.value)
 
     def test_pull_submodules_no_file(self):
         # Act
