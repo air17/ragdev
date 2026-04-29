@@ -69,10 +69,11 @@ pip install pre-commit && pre-commit install
 ## Conventions
 
 - **Always use top-level imports** — no inline/deferred imports anywhere in the codebase.
-- Linter/formatter: `ruff` (auto-fix on commit via pre-commit). Use `ruff --fix` on changed files before committing.
+- Linter/formatter: `ruff` (auto-fix on commit via pre-commit).
+- Git commits: use conventional commits style (e.g. `feat: add new agent tool for X`, `fix: handle DB error in middleware`, `docs: update AGENTS.md with new conventions`).
 - Always use typing hints everywhere, including function signatures and variable declarations. For dicts declare `TypedDict` in `types.py` and import from there. Always use modern typing syntax (PEP 585+); no `from typing import List` etc.
 - Async tests use `pytest-asyncio`; see `agent_tools/tests/conftest.py` for fixtures.
 - All bot response text constants live in `telegram_bot/const.py`.
 - `chat/const.py:SYSTEM_PROMPT` accepts `{project_tree}`, `{project_prompt}`, and `{repo_url}` format placeholders.
 - After implementing a feature, add a test in the appropriate `tests/` dir and ensure it runs before committing. Also run all the tests to ensure nothing is broken.
-- After your edits run ruff --fix on the changed files to ensure code style consistency.
+- After implementing an edit, propose a commit message for it

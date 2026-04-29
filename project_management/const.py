@@ -77,7 +77,7 @@ PROJECTS: dict[str, ProjectInfo] = {
     ),
     "jetlend_underwriting_frontend": ProjectInfo(
         name="Frontend Underwriting",
-        project_dir=config.FRONTEND_BUSINESS_PROJECT_DIR,
+        project_dir=config.FRONTEND_UNDERWRITING_PROJECT_DIR,
         submodules=("jetlend_react_lib",),
         project_prompt="React frontend for underwriter admin panel at crowdlending platform Jetlend used for borrower assessment and loan approval",
         repo_url="https://gitlab.jetlend.ru/frontend/jetlend_underwriting_frontend/-/blob/master/",
