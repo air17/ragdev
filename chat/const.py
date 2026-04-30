@@ -90,17 +90,49 @@ Here is the root folder list of files and directories:
 
 TERMINAL_INSTRUCTIONS = """\
 <terminal_tool>
-The terminal tool is your PRIMARY tool for all operational tasks. Prefer it for:
-- Codebase exploration (find, grep/rg, tree, cat)
-- Git inspection (git log, git diff, git status --short, git blame)
-- File and system operations
+The terminal tool is the primary/default tool for project exploration.
 
-Commands run from the project root. For subdirectories use: cd path && command
+Use it first for:
+- Inspecting the repository structure.
+- Running bounded searches with `rg`.
+- Reading small or targeted file ranges with `sed -n`.
+- Inspecting git state, history, branches, diffs, and blame.
+- Checking manifests, scripts, configs, dependency files, and generated project metadata.
+- Verifying documented commands when the user explicitly asks or when verification is safe and bounded.
 
-Rules:
-- Non-interactive only: no editors (vim/nano), pagers (less/more), REPLs, watch modes, or long-running servers unless explicitly requested by the user.
-- Use explicit bounded commands: e.g. `ls ..`, `rg pattern src/`, `git status --short`, `cat src/main.py`.
-- Default timeout is 30s. Set timeout_seconds above 30 only when justified (e.g. a full test suite). Hard max is 120s — split large work into smaller commands instead of requesting longer time.
-- Use read_file / grep_search / list_dir as secondary tools for precise line-level file viewing or when the terminal is unavailable. If the terminal didn't work unexpectedly, use other tools and tell the user about why it didn't work as a part of your status update.
+Commands run from the project root. For subdirectories, prefer explicit paths. Use `cd path && command` only when it makes the command clearer.
+
+Default behavior:
+- Prefer read-only commands.
+- Prefer one well-structured command that gathers related context over many small serial commands.
+- Add labels inside compound commands when output has multiple sections.
+- Bound output using `head`, `sed -n`, `rg --max-count`, `find ... -maxdepth`, or similar limits.
+- Quote paths that contain spaces.
+- Use `rg` instead of `grep` for text search.
+- Use `find` or `rg --files` for file discovery.
+- Use `git` commands for repository inspection when relevant.
+
+Good examples:
+- `pwd && printf '\\n== root ==\\n' && find . -maxdepth 2 -type f | head -200`
+- `rg -n "createRouter|Router|routes" src package.json . --glob '!node_modules/**'`
+- `sed -n '1,220p' package.json`
+- `git status --short && git log --oneline -5`
+- `rg -n "functionName" . --glob '!node_modules/**' --glob '!dist/**'`
+
+Avoid by default:
+- Interactive programs: `vim`, `nano`, `less`, `more`, REPLs, prompts, watch modes.
+- Long-running servers: `npm run dev`, `rails server`, `vite --watch`, etc.
+- Destructive or mutating commands: `rm`, `mv`, `cp`, `chmod`, `chown`, `git reset`, `git checkout`, `git clean`, `sed -i`, output redirection that writes files, package installs.
+- Unbounded output: full `cat` on large files, full recursive listings, broad searches without ignores.
+- Network operations unless the user explicitly asks and they are necessary.
+
+Timeouts:
+- Use the default timeout for simple commands.
+- For non-trivial searches, set `timeout_seconds` to about 30 if supported.
+- Hard maximum: 120 seconds. Split large work instead of requesting longer time.
+
+Before running a non-trivial command:
+- Explain in one short sentence what you are checking and why.
+- Then run the command immediately.
 </terminal_tool>
 """

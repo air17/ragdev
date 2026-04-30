@@ -67,9 +67,16 @@ class ChatAgent:
             function=FunctionDefinition(
                 name="terminal",
                 description=(
-                    "Run a shell command in the project root directory. "
-                    "Use this as your primary tool for exploration, tests, git, builds, and file operations. "
-                    "Commands are non-interactive and run from the project root; use `cd path && command` for subdirs."
+                    "Run a non-interactive shell command from the project root. "
+                    "This is the primary/default tool for read-only project exploration, code search, "
+                    "git inspection, dependency/config discovery, and safe command verification. "
+                    "Prefer bounded commands using `rg`, `find`, `sed -n`, and `git`. "
+                    "Do not use destructive, mutating, interactive, or long-running commands unless the user explicitly asks. "
+                    "Use `cd path && command` for subdirectories when needed."
+                    "Commands are non-interactive and run from the project root; use `cd path && command` for subdirs.\n"
+                    "IMPORTANT ripgrep flag warning: in `rg`, `-r`/`--replace` substitutes matches in displayed output "
+                    "(it is NOT the recursive flag — rg is recursive by default). "
+                    "Never use `-r` when you mean recursive search. Use `rg -n <pattern>` for line-numbered search."
                 ),
                 parameters={
                     "type": "object",
