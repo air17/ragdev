@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, Mock, patch, MagicMock
 
 # Import your actual modules
 from telegram_bot.main import (
@@ -254,3 +254,88 @@ class TestErrorHandling:
 
             # Should still respond to user
             mock_message.answer.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# Terminal-enabled flag in ChatAgent creation
+# ---------------------------------------------------------------------------
+
+
+def _make_chat_message_mocks(user_role: str):
+    """Return (mock_message, mock_user, mock_session_manager) for handle_chat_message tests."""
+    mock_user = Mock()
+    mock_user.user_id = 1
+    mock_user.current_session_id = "sess-123"
+    mock_user.user_role = user_role
+
+    mock_message = Mock()
+    mock_message.from_user = Mock()
+    mock_message.from_user.id = 1
+    mock_message.text = "hello"
+    mock_message.answer = AsyncMock()
+    mock_message.bot = AsyncMock()
+    mock_message.bot.send_chat_action = AsyncMock()
+
+    mock_sm = MagicMock()
+    mock_sm.project_dir = "/fake/project"
+    mock_sm.active_session = True
+    mock_sm.get_messages.return_value = []
+    mock_sm.project_prompt = None
+    mock_sm.submodules = ()
+    mock_sm.repo_url = None
+
+    return mock_message, mock_user, mock_sm
+
+
+class TestTerminalEnabledFlag:
+    @pytest.mark.asyncio
+    async def test_superadmin_gets_terminal_enabled(self, mock_db):
+        handler = BotEventHandler(mock_db)
+        mock_message, mock_user, mock_sm = _make_chat_message_mocks(
+            BotConstants.ROLE_SUPERADMIN
+        )
+        mock_db.get_user.return_value = mock_user
+
+        mock_agent = MagicMock()
+        mock_agent.run.return_value = iter([("answer", "final")])
+        mock_agent.total_tokens = 0
+        mock_agent.messages = []
+
+        mock_agent_cls = MagicMock(return_value=mock_agent)
+
+        with (
+            patch(
+                "telegram_bot.event_handler.ChatSessionManager", return_value=mock_sm
+            ),
+            patch("telegram_bot.event_handler.ChatAgent", mock_agent_cls),
+        ):
+            await handler.handle_chat_message(mock_message, AsyncMock())
+
+        _, kwargs = mock_agent_cls.call_args
+        assert kwargs.get("terminal_enabled") is True
+
+    @pytest.mark.asyncio
+    async def test_regular_user_gets_terminal_disabled(self, mock_db):
+        handler = BotEventHandler(mock_db)
+        mock_message, mock_user, mock_sm = _make_chat_message_mocks(
+            BotConstants.ROLE_USER
+        )
+        mock_db.get_user.return_value = mock_user
+
+        mock_agent = MagicMock()
+        mock_agent.run.return_value = iter([("answer", "final")])
+        mock_agent.total_tokens = 0
+        mock_agent.messages = []
+
+        mock_agent_cls = MagicMock(return_value=mock_agent)
+
+        with (
+            patch(
+                "telegram_bot.event_handler.ChatSessionManager", return_value=mock_sm
+            ),
+            patch("telegram_bot.event_handler.ChatAgent", mock_agent_cls),
+        ):
+            await handler.handle_chat_message(mock_message, AsyncMock())
+
+        _, kwargs = mock_agent_cls.call_args
+        assert kwargs.get("terminal_enabled") is False

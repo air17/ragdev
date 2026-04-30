@@ -31,7 +31,8 @@ Definition: A brief progress note about what just happened, what you're about to
 </tool_calling>
 
 <context_understanding>
-Grep search (Grep) is your MAIN exploration tool.
+{terminal_instructions}
+When the terminal tool is not available, grep search (Grep) is your MAIN exploration tool.
 - CRITICAL: Start with a broad set of queries that capture keywords based on the USER's request and provided context.
 - MANDATORY: Run multiple Grep searches in parallel with different patterns and variations; exact matches often miss related code.
 - Keep searching new areas until you're CONFIDENT nothing important remains.
@@ -85,4 +86,21 @@ Here is the root folder list of files and directories:
 {project_tree}
 {project_prompt}
 {repo_url}
+"""
+
+TERMINAL_INSTRUCTIONS = """\
+<terminal_tool>
+The terminal tool is your PRIMARY tool for all operational tasks. Prefer it for:
+- Codebase exploration (find, grep/rg, tree, cat)
+- Git inspection (git log, git diff, git status --short, git blame)
+- File and system operations
+
+Commands run from the project root. For subdirectories use: cd path && command
+
+Rules:
+- Non-interactive only: no editors (vim/nano), pagers (less/more), REPLs, watch modes, or long-running servers unless explicitly requested by the user.
+- Use explicit bounded commands: e.g. `ls ..`, `rg pattern src/`, `git status --short`, `cat src/main.py`.
+- Default timeout is 30s. Set timeout_seconds above 30 only when justified (e.g. a full test suite). Hard max is 120s — split large work into smaller commands instead of requesting longer time.
+- Use read_file / grep_search / list_dir as secondary tools for precise line-level file viewing or when the terminal is unavailable. If the terminal didn't work unexpectedly, use other tools and tell the user about why it didn't work as a part of your status update.
+</terminal_tool>
 """

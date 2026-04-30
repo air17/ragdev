@@ -21,7 +21,8 @@ from agent_tools.read_file import (
     read_file_with_context,
     read_file,
 )
-from chat.const import SYSTEM_PROMPT
+from agent_tools.terminal import run_terminal_command
+from chat.const import SYSTEM_PROMPT, TERMINAL_INSTRUCTIONS
 from chat.sessions import ChatSessionManager
 from config import (
     DEEPSEEK_BASE_URL,
@@ -37,6 +38,7 @@ class ChatAgent:
         model: str = "deepseek-chat",
         max_iterations: int = 15,
         session_manager: ChatSessionManager | None = None,
+        terminal_enabled: bool = False,
     ) -> None:
         # session is optional; if provided, messages are loaded from it and persisted there
         self.session_manager: ChatSessionManager | None = session_manager
@@ -48,6 +50,7 @@ class ChatAgent:
         self.deepseek: OpenAI = OpenAI(api_key=api_key, base_url=DEEPSEEK_BASE_URL)
         self.model: str = model
         self.project_dir: str = project_dir
+        self.terminal_enabled: bool = terminal_enabled
 
         self.project_prompt: str | None = (
             session_manager.project_prompt if session_manager else None
@@ -59,7 +62,37 @@ class ChatAgent:
             session_manager.repo_url if session_manager else None
         )
 
-        self.tools: list[ChatCompletionToolParam] = [
+        _terminal_tool: ChatCompletionToolParam = ChatCompletionToolParam(
+            type="function",
+            function=FunctionDefinition(
+                name="terminal",
+                description=(
+                    "Run a shell command in the project root directory. "
+                    "Use this as your primary tool for exploration, tests, git, builds, and file operations. "
+                    "Commands are non-interactive and run from the project root; use `cd path && command` for subdirs."
+                ),
+                parameters={
+                    "type": "object",
+                    "required": ["command", "explanation"],
+                    "properties": {
+                        "command": {
+                            "type": "string",
+                            "description": "The shell command to execute.",
+                        },
+                        "explanation": {
+                            "type": "string",
+                            "description": "One sentence explaining why this command is needed and how it contributes to the goal.",
+                        },
+                        "timeout_seconds": {
+                            "type": "integer",
+                            "description": "Timeout in seconds. Default 10, hard max 120. Only raise above 10 when justified.",
+                        },
+                    },
+                },
+            ),
+        )
+
+        _read_search_tools: list[ChatCompletionToolParam] = [
             ChatCompletionToolParam(
                 type="function",
                 function=FunctionDefinition(
@@ -181,28 +214,13 @@ class ChatAgent:
                     },
                 ),
             ),
-            ChatCompletionToolParam(
-                type="function",
-                function=FunctionDefinition(
-                    name="terminal",
-                    description="Propose a command to run on behalf of the user in the project root directory.",
-                    parameters={
-                        "type": "object",
-                        "required": ["command", "explanation"],
-                        "properties": {
-                            "command": {
-                                "type": "string",
-                                "description": "The terminal command to execute.",
-                            },
-                            "explanation": {
-                                "description": "One sentence explanation as to why this command needs to be run and how it contributes to the goal.",
-                                "type": "string",
-                            },
-                        },
-                    },
-                ),
-            ),
         ]
+
+        self.tools: list[ChatCompletionToolParam] = (
+            [_terminal_tool] + _read_search_tools
+            if terminal_enabled
+            else _read_search_tools
+        )
         self.system_prompt = SYSTEM_PROMPT.format(
             project_tree=ls(self.project_dir),
             project_prompt=(
@@ -211,6 +229,7 @@ class ChatAgent:
                 else ""
             ),
             repo_url="<repo_url>" + (self.repo_url or "") + "</repo_url>\n",
+            terminal_instructions=TERMINAL_INSTRUCTIONS if terminal_enabled else "",
         )
 
     def get_deepseek_response_text(
@@ -355,7 +374,13 @@ class ChatAgent:
                     int(args["line_from"]),
                 )
             elif tool == "terminal":
-                result = "The terminal is currently unavailable. Don't use it throughout this session."
+                if self.terminal_enabled:
+                    timeout: int = min(int(args.get("timeout_seconds", 10)), 120)
+                    result = run_terminal_command(
+                        args["command"], self.project_dir, timeout
+                    )
+                else:
+                    result = "The terminal is currently unavailable. Don't use it throughout this session."
             else:
                 result = f"Error: unknown tool {tool}"
         except Exception as e:

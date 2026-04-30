@@ -76,3 +76,93 @@ def test_chat_agent_omits_tools_on_final_iteration(mock_openai):
     assert first_call_kwargs["tools"] == agent.tools
     assert "tools" not in final_call_kwargs
     assert agent.messages[-1]["role"] == "tool"
+
+
+# ---------------------------------------------------------------------------
+# Terminal tool presence / ordering
+# ---------------------------------------------------------------------------
+
+
+def test_terminal_absent_by_default():
+    agent = ChatAgent(project_dir="/test/project")
+    tool_names = [t["function"]["name"] for t in agent.tools]
+    assert "terminal" not in tool_names
+    assert agent.terminal_enabled is False
+
+
+def test_terminal_present_and_first_when_enabled():
+    agent = ChatAgent(project_dir="/test/project", terminal_enabled=True)
+    tool_names = [t["function"]["name"] for t in agent.tools]
+    assert tool_names[0] == "terminal"
+    assert agent.terminal_enabled is True
+
+
+def test_terminal_schema_includes_timeout_seconds():
+    agent = ChatAgent(project_dir="/test/project", terminal_enabled=True)
+    terminal_tool = agent.tools[0]
+    assert terminal_tool["function"]["name"] == "terminal"
+    props = terminal_tool["function"]["parameters"]["properties"]
+    assert "timeout_seconds" in props
+    assert "command" in props
+    assert "explanation" in props
+
+
+# ---------------------------------------------------------------------------
+# Terminal dispatch
+# ---------------------------------------------------------------------------
+
+
+@patch("chat.agent.run_terminal_command")
+def test_terminal_dispatch_uses_project_dir_and_caps_timeout(mock_run):
+    mock_run.return_value = "ok"
+    agent = ChatAgent(project_dir="/my/project", terminal_enabled=True)
+    result = agent.dispatch_tool_call(
+        "terminal", {"command": "ls", "explanation": "list", "timeout_seconds": 60}
+    )
+    mock_run.assert_called_once_with("ls", "/my/project", 60)
+    assert result == "ok"
+
+
+@patch("chat.agent.run_terminal_command")
+def test_terminal_dispatch_caps_timeout_at_120(mock_run):
+    mock_run.return_value = "ok"
+    agent = ChatAgent(project_dir="/my/project", terminal_enabled=True)
+    agent.dispatch_tool_call(
+        "terminal",
+        {"command": "sleep 200", "explanation": "long", "timeout_seconds": 999},
+    )
+    _, _, actual_timeout = mock_run.call_args.args
+    assert actual_timeout == 120
+
+
+@patch("chat.agent.run_terminal_command")
+def test_terminal_dispatch_default_timeout(mock_run):
+    mock_run.return_value = "ok"
+    agent = ChatAgent(project_dir="/my/project", terminal_enabled=True)
+    agent.dispatch_tool_call("terminal", {"command": "echo hi", "explanation": "x"})
+    _, _, actual_timeout = mock_run.call_args.args
+    assert actual_timeout == 30
+
+
+def test_terminal_dispatch_disabled_returns_unavailable():
+    agent = ChatAgent(project_dir="/my/project", terminal_enabled=False)
+    result = agent.dispatch_tool_call(
+        "terminal", {"command": "rm -rf /", "explanation": "bad"}
+    )
+    assert "unavailable" in result.lower()
+
+
+# ---------------------------------------------------------------------------
+# System prompt contains terminal instructions when enabled
+# ---------------------------------------------------------------------------
+
+
+def test_system_prompt_contains_terminal_instructions_when_enabled():
+    agent = ChatAgent(project_dir="/test/project", terminal_enabled=True)
+    assert "terminal" in agent.system_prompt.lower()
+    assert "primary" in agent.system_prompt.lower()
+
+
+def test_system_prompt_no_terminal_instructions_when_disabled():
+    agent = ChatAgent(project_dir="/test/project", terminal_enabled=False)
+    assert "<terminal_tool>" not in agent.system_prompt

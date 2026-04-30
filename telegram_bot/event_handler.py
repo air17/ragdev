@@ -847,6 +847,7 @@ class BotEventHandler:
                 project_dir=session_manager.project_dir,
                 # collection_name=session_manager.collection_name,
                 session_manager=session_manager,
+                terminal_enabled=user.user_role == BotConstants.ROLE_SUPERADMIN,
             )
 
             # Send typing action
