@@ -9,7 +9,7 @@ Telegram bot → `BotEventHandler` (aiogram v3) → `ChatAgent` (agentic loop) �
 - `chat/sessions.py` — `ChatSessionManager`: session history persisted as **pickle files** in `sessions/` dir
 - `telegram_bot/event_handler.py` — all bot command/message handlers, `BotEventHandler`
 - `telegram_bot/middleware.py` — `DatabaseMiddleware`: RBAC + user auto-registration, **fail-open** (DB errors never block handlers)
-- `telegram_bot/db.py` — `AsyncUserDatabase`: async SQLite via `aiosqlite`, `MigrationManager`
+- `telegram_bot/db.py` — `AsyncUserDatabase`: async SQLite via SQLModel/SQLAlchemy + Alembic migrations
 - `project_management/const.py` — `PROJECTS` dict: maps project slug → local path + prompt + submodules
 - `config.py` — central config; reads `.env` first, then system env, then defaults
 - `rag/` — **deprecated**; all symbols emit `DeprecationWarning`. Do not add new code here.
@@ -22,6 +22,7 @@ Register it in `project_management/const.py:PROJECTS`. The bot auto-registers `/
 
 1. **Pickle file** (`sessions/<uuid>.pickle`): stores full OpenAI message history + meta (project_dir, submodules, repo_url, total_tokens).
 2. **SQLite `chat_sessions` table**: stores session metadata per user for bot UI (name, message_count, last_activity).
+   Schema changes are managed by Alembic.
 
 When message history exceeds limits or gets corrupted, `ChatSessionManager.fix_messages_after_interruption()` trims to the last assistant message.
 
@@ -61,6 +62,12 @@ pytest
 pytest agent_tools/tests/
 pytest chat/tests/
 pytest telegram_bot/tests/
+
+# Apply DB migrations manually
+python -m alembic upgrade head
+
+# Generate a new migration after editing SQLModel models
+python -m alembic revision --autogenerate -m "describe change"
 
 # Install pre-commit hooks (runs ruff + tests on push)
 pip install pre-commit && pre-commit install

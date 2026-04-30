@@ -1,5 +1,5 @@
 aiogram
-aiosqlite
+alembic
 apscheduler
 bleach
 GitPython
@@ -14,3 +14,5 @@ pytest
 pytest-asyncio
 python-dotenv
 ripgrepy
+sqlalchemy
+sqlmodel

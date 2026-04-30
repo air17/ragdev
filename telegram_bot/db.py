@@ -1,17 +1,38 @@
-import aiosqlite
 import asyncio
-import logging
 import json
-from datetime import datetime, timedelta
-from typing import Optional, List, Dict, Any, Union
+import logging
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from dataclasses import dataclass, asdict, field
-from pathlib import Path
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 from enum import Enum
+from pathlib import Path
+from typing import Any
+
+from alembic import command
+from alembic.config import Config
+from sqlalchemy import Engine, create_engine
+from sqlalchemy import Column, DateTime, ForeignKey, Index, Integer, Text, event, func
+from sqlalchemy import inspect as sqlalchemy_inspect
+from sqlalchemy.exc import SQLAlchemyError
+from sqlmodel import Field, SQLModel, Session, col, delete, or_, select, update
+
+
+INITIAL_ALEMBIC_REVISION = "0001_current_schema"
+DATETIME_FIELDS = {
+    "created_at",
+    "updated_at",
+    "last_seen",
+    "first_interaction",
+    "last_interaction",
+    "timestamp",
+    "last_activity",
+    "deleted_at",
+}
 
 
 class UserRole(Enum):
-    """User roles with hierarchy levels"""
+    """User roles with hierarchy levels."""
 
     USER = ("user", 1)
     SUPERADMIN = ("superadmin", 10)
@@ -28,40 +49,37 @@ class UserRole(Enum):
         raise ValueError(f"Invalid role: {role_str}")
 
     def can_manage(self, other_role: "UserRole") -> bool:
-        """Check if this role can manage another role"""
+        """Check if this role can manage another role."""
         return self.level > other_role.level
 
 
 @dataclass
 class User:
-    """User data model matching Telegram user structure with bot-specific fields"""
+    """User data model matching Telegram user structure with bot-specific fields."""
 
     user_id: int
-    username: Optional[str] = None
-    first_name: Optional[str] = None
-    last_name: Optional[str] = None
-    language_code: Optional[str] = None
+    username: str | None = None
+    first_name: str | None = None
+    last_name: str | None = None
+    language_code: str | None = None
     is_bot: bool = False
-    is_premium: Optional[bool] = None
-    added_to_attachment_menu: Optional[bool] = None
+    is_premium: bool | None = None
+    added_to_attachment_menu: bool | None = None
 
-    # Bot-specific fields
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
-    last_seen: Optional[datetime] = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+    last_seen: datetime | None = None
     is_active: bool = False
-    user_state: Optional[str] = None
+    user_state: str | None = None
     user_role: str = "user"
-    settings: Optional[Dict[str, Any]] = field(default_factory=dict)
+    settings: dict[str, Any] | None = field(default_factory=dict)
 
-    # Chat session
     current_session_id: str | None = None
 
-    # Analytics fields
     total_messages: int = 0
     total_commands: int = 0
-    first_interaction: Optional[datetime] = None
-    last_interaction: Optional[datetime] = None
+    first_interaction: datetime | None = None
+    last_interaction: datetime | None = None
 
 
 @dataclass
@@ -78,366 +96,498 @@ class ChatSession:
 
 @dataclass
 class UserActivity:
-    """User activity tracking model"""
+    """User activity tracking model."""
 
-    id: Optional[int] = None
+    id: int | None = None
     user_id: int = 0
-    activity_type: str = ""  # 'message', 'command', 'callback', 'inline'
-    activity_data: Optional[str] = None  # JSON data
-    timestamp: Optional[datetime] = None
-    session_id: Optional[str] = None
+    activity_type: str = ""
+    activity_data: str | None = None
+    timestamp: datetime | None = None
+    session_id: str | None = None
 
 
 class DatabaseError(Exception):
-    """Custom exception for database operations"""
+    """Custom exception for database operations."""
 
-    pass
+
+class UserRecord(SQLModel, table=True):
+    __tablename__ = "users"
+    __table_args__ = (
+        Index("idx_username", "username"),
+        Index("idx_user_role", "user_role"),
+        Index("idx_is_active", "is_active"),
+        Index("idx_created_at", "created_at"),
+        Index("idx_last_seen", "last_seen"),
+    )
+
+    user_id: int = Field(primary_key=True)
+    username: str | None = None
+    first_name: str | None = None
+    last_name: str | None = None
+    language_code: str | None = None
+    is_bot: bool = Field(default=False)
+    is_premium: bool | None = None
+    added_to_attachment_menu: bool | None = None
+    created_at: datetime | None = Field(
+        default=None, sa_column=Column(DateTime, nullable=True)
+    )
+    updated_at: datetime | None = Field(
+        default=None, sa_column=Column(DateTime, nullable=True)
+    )
+    last_seen: datetime | None = Field(
+        default=None, sa_column=Column(DateTime, nullable=True)
+    )
+    is_active: bool = Field(default=False)
+    user_state: str | None = None
+    user_role: str = Field(default=UserRole.USER.role_name)
+    settings: str | None = Field(default="{}", sa_column=Column(Text, nullable=True))
+    total_messages: int = Field(default=0)
+    total_commands: int = Field(default=0)
+    first_interaction: datetime | None = Field(
+        default=None, sa_column=Column(DateTime, nullable=True)
+    )
+    last_interaction: datetime | None = Field(
+        default=None, sa_column=Column(DateTime, nullable=True)
+    )
+    current_session_id: str | None = None
+
+
+class UserActivityRecord(SQLModel, table=True):
+    __tablename__ = "user_activities"
+    __table_args__ = (
+        Index("idx_activity_user_id", "user_id"),
+        Index("idx_activity_type", "activity_type"),
+        Index("idx_activity_timestamp", "timestamp"),
+        Index("idx_activity_session", "session_id"),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    user_id: int = Field(
+        sa_column=Column(
+            Integer, ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False
+        )
+    )
+    activity_type: str = Field(nullable=False)
+    activity_data: str | None = Field(default=None, sa_column=Column(Text))
+    timestamp: datetime | None = Field(
+        default=None, sa_column=Column(DateTime, nullable=True)
+    )
+    session_id: str | None = None
+
+
+class ChatSessionRecord(SQLModel, table=True):
+    __tablename__ = "chat_sessions"
+    __table_args__ = (
+        Index("idx_chat_sessions_user_id", "user_id"),
+        Index("idx_chat_sessions_created_at", "created_at"),
+        Index("idx_chat_sessions_last_activity", "last_activity"),
+        Index("idx_chat_sessions_deleted_at", "deleted_at"),
+    )
+
+    session_id: str = Field(primary_key=True)
+    user_id: int = Field(
+        sa_column=Column(
+            Integer, ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False
+        )
+    )
+    name: str = Field(nullable=False)
+    created_at: datetime | None = Field(
+        default=None, sa_column=Column(DateTime, nullable=True)
+    )
+    last_activity: datetime | None = Field(
+        default=None, sa_column=Column(DateTime, nullable=True)
+    )
+    deleted_at: datetime | None = Field(
+        default=None, sa_column=Column(DateTime, nullable=True)
+    )
+    message_count: int = Field(default=0)
+
+
+def _coerce_datetime(value: Any) -> datetime | None:
+    if value is None or isinstance(value, datetime):
+        return value
+    if isinstance(value, str):
+        try:
+            return datetime.fromisoformat(value)
+        except ValueError:
+            return None
+    return None
+
+
+def _sqlite_url(db_path: str | Path) -> str:
+    path = Path(db_path)
+    if str(path) == ":memory:":
+        return "sqlite:///:memory:"
+    return f"sqlite:///{path.resolve()}"
+
+
+def _alembic_config(db_path: str | Path) -> Config:
+    config = Config(str(Path(__file__).resolve().parents[1] / "alembic.ini"))
+    config.set_main_option("sqlalchemy.url", _sqlite_url(db_path))
+    return config
+
+
+def _enable_sqlite_pragmas(engine: Engine) -> None:
+    @event.listens_for(engine, "connect")
+    def set_sqlite_pragmas(dbapi_connection: Any, _: Any) -> None:
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA synchronous=NORMAL")
+        cursor.execute("PRAGMA temp_store=memory")
+        cursor.execute("PRAGMA mmap_size=268435456")
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
 
 
 class MigrationManager:
-    """Database migration management system"""
+    """Alembic-backed database migration compatibility wrapper."""
 
     CURRENT_VERSION = 2
+    REQUIRED_LEGACY_TABLES = {
+        "schema_migrations",
+        "users",
+        "user_activities",
+        "chat_sessions",
+    }
+    REQUIRED_LEGACY_COLUMNS = {
+        "users": {
+            "user_id",
+            "username",
+            "first_name",
+            "last_name",
+            "language_code",
+            "is_bot",
+            "is_premium",
+            "added_to_attachment_menu",
+            "created_at",
+            "updated_at",
+            "last_seen",
+            "is_active",
+            "user_state",
+            "user_role",
+            "settings",
+            "total_messages",
+            "total_commands",
+            "first_interaction",
+            "last_interaction",
+            "current_session_id",
+        },
+        "user_activities": {
+            "id",
+            "user_id",
+            "activity_type",
+            "activity_data",
+            "timestamp",
+            "session_id",
+        },
+        "chat_sessions": {
+            "session_id",
+            "user_id",
+            "name",
+            "created_at",
+            "last_activity",
+            "deleted_at",
+            "message_count",
+        },
+    }
 
     @staticmethod
     async def get_db_version(db_path: str) -> int:
-        """Get current database version"""
+        """Return the legacy schema version, or CURRENT_VERSION for Alembic DBs."""
+        engine = create_engine(_sqlite_url(db_path))
         try:
-            async with aiosqlite.connect(db_path) as conn:
-                async with conn.execute(
-                    "SELECT name FROM sqlite_master WHERE type='table' AND name='schema_migrations'"
-                ) as cursor:
-                    if not await cursor.fetchone():
-                        return 0
-
-                async with conn.execute(
+            with engine.connect() as conn:
+                tables = set(sqlalchemy_inspect(conn).get_table_names())
+                if "alembic_version" in tables:
+                    result = conn.exec_driver_sql(
+                        "SELECT version_num FROM alembic_version"
+                    )
+                    revision = result.scalar_one_or_none()
+                    return MigrationManager.CURRENT_VERSION if revision else 0
+                if "schema_migrations" not in tables:
+                    return 0
+                result = conn.exec_driver_sql(
                     "SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1"
-                ) as cursor:
-                    result = await cursor.fetchone()
-                    return result[0] if result else 0
+                )
+                version = result.scalar_one_or_none()
+                return int(version) if version is not None else 0
         except Exception:
             return 0
+        finally:
+            engine.dispose()
 
-    @staticmethod
-    async def create_migrations_table(conn: aiosqlite.Connection):
-        """Create migrations tracking table"""
-        await conn.execute("""
-            CREATE TABLE IF NOT EXISTS schema_migrations (
-                version INTEGER PRIMARY KEY,
-                applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                description TEXT
-            )
-        """)
-
-    @staticmethod
-    async def apply_migration_v1(conn: aiosqlite.Connection):
-        """Apply version 1 migration - initial schema"""
-        # Users table with analytics fields
-        await conn.execute("""
-            CREATE TABLE IF NOT EXISTS users (
-                user_id INTEGER PRIMARY KEY,
-                username TEXT,
-                first_name TEXT,
-                last_name TEXT,
-                language_code TEXT,
-                is_bot BOOLEAN DEFAULT FALSE,
-                is_premium BOOLEAN,
-                added_to_attachment_menu BOOLEAN,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                last_seen TIMESTAMP,
-                is_active BOOLEAN DEFAULT TRUE,
-                user_state TEXT,
-                user_role TEXT DEFAULT 'user',
-                settings TEXT DEFAULT '{}',
-                total_messages INTEGER DEFAULT 0,
-                total_commands INTEGER DEFAULT 0,
-                first_interaction TIMESTAMP,
-                last_interaction TIMESTAMP,
-                UNIQUE(user_id)
-            )
-        """)
-
-        # User activities table for detailed analytics
-        await conn.execute("""
-            CREATE TABLE IF NOT EXISTS user_activities (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
-                activity_type TEXT NOT NULL,
-                activity_data TEXT,
-                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                session_id TEXT,
-                FOREIGN KEY (user_id) REFERENCES users (user_id) ON DELETE CASCADE
-            )
-        """)
-
-        # Create indexes for performance
-        await conn.execute("CREATE INDEX IF NOT EXISTS idx_username ON users(username)")
-        await conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_user_role ON users(user_role)"
-        )
-        await conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_is_active ON users(is_active)"
-        )
-        await conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_created_at ON users(created_at)"
-        )
-        await conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_last_seen ON users(last_seen)"
-        )
-
-        # Activity indexes
-        await conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_activity_user_id ON user_activities(user_id)"
-        )
-        await conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_activity_type ON user_activities(activity_type)"
-        )
-        await conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_activity_timestamp ON user_activities(timestamp)"
-        )
-        await conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_activity_session ON user_activities(session_id)"
-        )
-
-        # Record migration
-        await conn.execute(
-            "INSERT INTO schema_migrations (version, description) VALUES (?, ?)",
-            (1, "Initial schema with users and analytics"),
-        )
-
-    @staticmethod
-    async def apply_migration_v2(conn: aiosqlite.Connection):
-        """Apply version 2 migration - add session table"""
-        _chat_sessions_table_sql = """
-                CREATE TABLE IF NOT EXISTS chat_sessions (
-                    session_id TEXT PRIMARY KEY,
-                    user_id INTEGER NOT NULL,
-                    name TEXT NOT NULL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    last_activity TIMESTAMP,
-                    deleted_at TIMESTAMP,                 -- soft-delete marker (NULL = active)
-                    message_count INTEGER DEFAULT 0,
-                    FOREIGN KEY (user_id) REFERENCES users (user_id) ON DELETE CASCADE
-                );
-                """
-
-        _chat_sessions_indexes_sql = [
-            "CREATE INDEX IF NOT EXISTS idx_chat_sessions_user_id ON chat_sessions(user_id);",
-            "CREATE INDEX IF NOT EXISTS idx_chat_sessions_created_at ON chat_sessions(created_at);",
-            "CREATE INDEX IF NOT EXISTS idx_chat_sessions_last_activity ON chat_sessions(last_activity);",
-            "CREATE INDEX IF NOT EXISTS idx_chat_sessions_deleted_at ON chat_sessions(deleted_at);",
-        ]
-
-        # Add current_session_id to users table safely (run inside a migration - catch/ignore error if column exists)
-        _add_current_session_column_sql = (
-            "ALTER TABLE users ADD COLUMN current_session_id TEXT;"
-        )
-
-        await conn.execute(_chat_sessions_table_sql)
-        for idx_sql in _chat_sessions_indexes_sql:
-            await conn.execute(idx_sql)
+    @classmethod
+    async def initialize_database(cls, db_path: str | Path) -> None:
+        """Run Alembic on fresh DBs and stamp valid legacy v2 DBs."""
+        engine = create_engine(_sqlite_url(db_path))
         try:
-            await conn.execute(_add_current_session_column_sql)
-        except aiosqlite.Error:
-            # Column already exists on a previously migrated DB — ignore
-            pass
+            with engine.connect() as conn:
+                tables = set(sqlalchemy_inspect(conn).get_table_names())
 
-        # Then record migration as normal:
-        await conn.execute(
-            "INSERT INTO schema_migrations (version, description) VALUES (?, ?)",
-            (2, "Add chat_sessions"),
-        )
+            if "alembic_version" in tables:
+                command.upgrade(_alembic_config(db_path), "head")
+                return
+
+            app_tables = tables & {"users", "user_activities", "chat_sessions"}
+            if not app_tables:
+                command.upgrade(_alembic_config(db_path), "head")
+                return
+
+            version = await cls.get_db_version(str(db_path))
+            if version == cls.CURRENT_VERSION:
+                cls._validate_legacy_schema(engine)
+                command.stamp(_alembic_config(db_path), "head")
+                return
+
+            raise DatabaseError(
+                "Database has a partial or unsupported pre-Alembic schema. "
+                "Expected legacy schema_migrations version 2 before stamping Alembic."
+            )
+        finally:
+            engine.dispose()
+
+    @classmethod
+    def _validate_legacy_schema(cls, engine: Engine) -> None:
+        with engine.connect() as conn:
+            inspector = sqlalchemy_inspect(conn)
+            tables = set(inspector.get_table_names())
+            missing_tables = cls.REQUIRED_LEGACY_TABLES - tables
+            if missing_tables:
+                raise DatabaseError(
+                    f"Legacy database is missing required tables: {sorted(missing_tables)}"
+                )
+
+            for table_name, required_columns in cls.REQUIRED_LEGACY_COLUMNS.items():
+                columns = {
+                    column["name"] for column in inspector.get_columns(table_name)
+                }
+                missing_columns = required_columns - columns
+                if missing_columns:
+                    raise DatabaseError(
+                        f"Legacy table {table_name} is missing columns: "
+                        f"{sorted(missing_columns)}"
+                    )
 
 
 class AsyncUserDatabase:
-    """Async SQLite database manager for aiogram bot users with analytics"""
+    """Async SQLModel database manager for aiogram bot users with analytics."""
 
     def __init__(self, db_path: str = "bot_users.db"):
-        """Initialize async database manager"""
         self.db_path = Path(db_path)
         self.logger = logging.getLogger(__name__)
+        if str(self.db_path) != ":memory:":
+            self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self.engine = create_engine(
+            _sqlite_url(self.db_path),
+            connect_args={"timeout": 10.0},
+        )
+        _enable_sqlite_pragmas(self.engine)
+        self.session_factory = Session
 
-        # Ensure database directory exists
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
-
-    async def initialize(self):
-        """Initialize database with migrations"""
+    async def initialize(self) -> None:
+        """Initialize database with Alembic migrations."""
         try:
-            current_version = await MigrationManager.get_db_version(str(self.db_path))
-            target_version = MigrationManager.CURRENT_VERSION
-
-            if current_version < target_version:
-                self.logger.info(
-                    f"Migrating database from v{current_version} to v{target_version}"
-                )
-                await self._run_migrations(current_version, target_version)
-
+            await MigrationManager.initialize_database(self.db_path)
             self.logger.info("Database initialized successfully")
         except Exception as e:
             self.logger.error(f"Database initialization failed: {e}")
             raise DatabaseError(f"Database initialization failed: {e}")
 
-    async def _run_migrations(self, current_version: int, target_version: int):
-        """Run database migrations"""
-        async with aiosqlite.connect(self.db_path) as conn:
-            await MigrationManager.create_migrations_table(conn)
-
-            if current_version < 1 <= target_version:
-                await MigrationManager.apply_migration_v1(conn)
-            if current_version < 2 <= target_version:
-                await MigrationManager.apply_migration_v2(conn)
-
-            await conn.commit()
-
     @asynccontextmanager
-    async def get_connection(self):
-        """Async context manager for database connections with proper locking"""
-        conn = None
-        try:
-            conn = await aiosqlite.connect(self.db_path, timeout=10.0)
-            conn.row_factory = aiosqlite.Row
-            # Enable WAL mode for better concurrency
-            await conn.execute("PRAGMA journal_mode=WAL")
-            await conn.execute("PRAGMA synchronous=NORMAL")
-            await conn.execute("PRAGMA temp_store=memory")
-            await conn.execute("PRAGMA mmap_size=268435456")  # 256MB
-            yield conn
-        except aiosqlite.Error as e:
-            if conn:
-                try:
-                    await conn.rollback()
-                except Exception:
-                    pass
-            self.logger.error(f"Database error: {e}")
-            raise DatabaseError(f"Database operation failed: {e}")
-        finally:
-            if conn:
-                try:
-                    await conn.close()
-                except Exception:
-                    pass
+    async def get_session(self) -> AsyncIterator[Session]:
+        with self.session_factory(self.engine, expire_on_commit=False) as session:
+            try:
+                yield session
+            except SQLAlchemyError as e:
+                session.rollback()
+                self.logger.error(f"Database error: {e}")
+                raise DatabaseError(f"Database operation failed: {e}")
 
-    # User Management Methods
+    @staticmethod
+    def _user_record_to_dataclass(record: UserRecord) -> User:
+        settings: dict[str, Any] = {}
+        if record.settings:
+            try:
+                parsed = json.loads(record.settings)
+                settings = parsed if isinstance(parsed, dict) else {}
+            except json.JSONDecodeError:
+                settings = {}
+
+        return User(
+            user_id=record.user_id,
+            username=record.username,
+            first_name=record.first_name,
+            last_name=record.last_name,
+            language_code=record.language_code,
+            is_bot=bool(record.is_bot),
+            is_premium=record.is_premium,
+            added_to_attachment_menu=record.added_to_attachment_menu,
+            created_at=_coerce_datetime(record.created_at),
+            updated_at=_coerce_datetime(record.updated_at),
+            last_seen=_coerce_datetime(record.last_seen),
+            is_active=bool(record.is_active),
+            user_state=record.user_state,
+            user_role=record.user_role,
+            settings=settings,
+            current_session_id=record.current_session_id,
+            total_messages=record.total_messages or 0,
+            total_commands=record.total_commands or 0,
+            first_interaction=_coerce_datetime(record.first_interaction),
+            last_interaction=_coerce_datetime(record.last_interaction),
+        )
+
+    @staticmethod
+    def _chat_session_record_to_dataclass(record: ChatSessionRecord) -> ChatSession:
+        return ChatSession(
+            session_id=record.session_id,
+            user_id=record.user_id,
+            name=record.name,
+            created_at=_coerce_datetime(record.created_at) or datetime.now(),
+            last_activity=_coerce_datetime(record.last_activity),
+            ended_at=None,
+            deleted_at=_coerce_datetime(record.deleted_at),
+            message_count=record.message_count or 0,
+        )
+
+    @staticmethod
+    def _row_to_user(row_dict: dict[str, Any]) -> User:
+        for field_name in [
+            "created_at",
+            "updated_at",
+            "last_seen",
+            "first_interaction",
+            "last_interaction",
+        ]:
+            row_dict[field_name] = _coerce_datetime(row_dict.get(field_name))
+
+        if row_dict.get("settings"):
+            try:
+                row_dict["settings"] = json.loads(row_dict["settings"])
+            except json.JSONDecodeError:
+                row_dict["settings"] = {}
+
+        return User(**row_dict)
+
+    @staticmethod
+    def _row_to_chat_session(row_dict: dict[str, Any]) -> ChatSession:
+        for field_name in ("created_at", "last_activity", "ended_at", "deleted_at"):
+            row_dict[field_name] = _coerce_datetime(row_dict.get(field_name))
+        return ChatSession(
+            session_id=row_dict["session_id"],
+            user_id=int(row_dict["user_id"]),
+            name=row_dict.get("name") or "",
+            created_at=row_dict["created_at"] or datetime.now(),
+            last_activity=row_dict.get("last_activity"),
+            ended_at=row_dict.get("ended_at"),
+            deleted_at=row_dict.get("deleted_at"),
+            message_count=int(row_dict.get("message_count") or 0),
+        )
+
+    @staticmethod
+    def _user_to_record_kwargs(user: User) -> dict[str, Any]:
+        now = datetime.now()
+        user.created_at = now
+        user.updated_at = now
+        user.first_interaction = now
+        user.last_interaction = now
+
+        return {
+            "user_id": user.user_id,
+            "username": user.username,
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+            "language_code": user.language_code,
+            "is_bot": user.is_bot,
+            "is_premium": user.is_premium,
+            "added_to_attachment_menu": user.added_to_attachment_menu,
+            "created_at": user.created_at,
+            "updated_at": user.updated_at,
+            "last_seen": user.last_seen,
+            "is_active": user.is_active,
+            "user_state": user.user_state,
+            "user_role": user.user_role,
+            "settings": json.dumps(user.settings or {}),
+            "current_session_id": user.current_session_id,
+            "total_messages": user.total_messages,
+            "total_commands": user.total_commands,
+            "first_interaction": user.first_interaction,
+            "last_interaction": user.last_interaction,
+        }
+
+    @staticmethod
+    def _normalize_update_values(values: dict[str, Any]) -> dict[str, Any]:
+        normalized = dict(values)
+        if isinstance(normalized.get("settings"), dict):
+            normalized["settings"] = json.dumps(normalized["settings"])
+        for field_name in DATETIME_FIELDS:
+            if field_name in normalized:
+                normalized[field_name] = _coerce_datetime(normalized[field_name])
+        return normalized
 
     async def add_user(self, user: User) -> bool:
-        """Add a new user to the database"""
+        """Add a new user to the database."""
         try:
-            async with self.get_connection() as conn:
-                now = datetime.now()
-                user.created_at = now
-                user.updated_at = now
-                user.first_interaction = now
-                user.last_interaction = now
+            async with self.get_session() as session:
+                existing = session.get(UserRecord, user.user_id)
+                if existing:
+                    return False
 
-                user_dict = asdict(user)
-                # Convert datetime objects and handle JSON fields
-                for key, value in user_dict.items():
-                    if isinstance(value, datetime):
-                        user_dict[key] = value.isoformat()
-                    elif key == "settings" and isinstance(value, dict):
-                        user_dict[key] = json.dumps(value)
-
-                placeholders = ", ".join(["?" for _ in user_dict])
-                columns = ", ".join(user_dict.keys())
-
-                await conn.execute(
-                    f"INSERT OR IGNORE INTO users ({columns}) VALUES ({placeholders})",
-                    list(user_dict.values()),
-                )
-
-                rows_affected = conn.total_changes
-                await conn.commit()
-
-                if rows_affected > 0:
-                    self.logger.info(f"Added new user: {user.user_id}")
-                    return True
-                return False
-
+                session.add(UserRecord(**self._user_to_record_kwargs(user)))
+                session.commit()
+                self.logger.info(f"Added new user: {user.user_id}")
+                return True
         except Exception as e:
             self.logger.error(f"Error adding user {user.user_id}: {e}")
             raise DatabaseError(f"Failed to add user: {e}")
 
-    async def get_user(self, user_id: int) -> Optional[User]:
-        """Retrieve a user by user_id"""
+    async def get_user(self, user_id: int) -> User | None:
+        """Retrieve a user by user_id."""
         try:
-            async with self.get_connection() as conn:
-                async with conn.execute(
-                    "SELECT * FROM users WHERE user_id = ?", (user_id,)
-                ) as cursor:
-                    row = await cursor.fetchone()
-
-                    if row:
-                        user_dict = dict(row)
-                        return self._row_to_user(user_dict)
-                    return None
-
+            async with self.get_session() as session:
+                record = session.get(UserRecord, user_id)
+                return self._user_record_to_dataclass(record) if record else None
         except Exception as e:
             self.logger.error(f"Error retrieving user {user_id}: {e}")
             raise DatabaseError(f"Failed to retrieve user: {e}")
 
-    async def update_user(self, user_id: int, **kwargs) -> bool:
-        """Update user information"""
+    async def update_user(self, user_id: int, **kwargs: Any) -> bool:
+        """Update user information."""
         if not kwargs:
             return False
 
         try:
-            async with self.get_connection() as conn:
-                # Start transaction
-                await conn.execute("BEGIN IMMEDIATE")
-
-                try:
-                    # Handle special fields
-                    if "settings" in kwargs and isinstance(kwargs["settings"], dict):
-                        kwargs["settings"] = json.dumps(kwargs["settings"])
-
-                    # Add updated_at timestamp
-                    kwargs["updated_at"] = datetime.now().isoformat()
-
-                    set_clause = ", ".join([f"{key} = ?" for key in kwargs.keys()])
-                    values = list(kwargs.values()) + [user_id]
-
-                    cursor = await conn.execute(
-                        f"UPDATE users SET {set_clause} WHERE user_id = ?", values
-                    )
-
-                    rows_affected = cursor.rowcount
-                    await conn.commit()
-
-                    if rows_affected > 0:
-                        self.logger.info(f"Updated user: {user_id}")
-                        return True
-                    return False
-
-                except Exception as e:
-                    await conn.rollback()
-                    raise e
-
+            async with self.get_session() as session:
+                values = self._normalize_update_values(kwargs)
+                values["updated_at"] = datetime.now()
+                result = session.exec(
+                    update(UserRecord)
+                    .where(UserRecord.user_id == user_id)
+                    .values(**values)
+                )
+                session.commit()
+                if result.rowcount > 0:
+                    self.logger.info(f"Updated user: {user_id}")
+                    return True
+                return False
         except Exception as e:
             self.logger.error(f"Error updating user {user_id}: {e}")
             raise DatabaseError(f"Failed to update user: {e}")
 
-    # Role Management with Superadmin Support
-
-    async def set_user_role(self, user_id: int, role: Union[str, UserRole]) -> bool:
-        """Set user role with validation"""
+    async def set_user_role(self, user_id: int, role: str | UserRole) -> bool:
+        """Set user role with validation."""
         try:
-            if isinstance(role, str):
-                role_name = role
-            else:
-                role_name = role.role_name
-
+            role_name = role if isinstance(role, str) else role.role_name
             return await self.update_user(user_id, user_role=role_name)
         except ValueError as e:
             raise DatabaseError(f"Invalid role: {e}")
 
     async def is_superadmin(self, user_id: int) -> bool:
-        """Check if user is a superadmin"""
+        """Check if user is a superadmin."""
         user = await self.get_user(user_id)
-        return user.user_role == "superadmin" if user else False
+        return user.user_role == UserRole.SUPERADMIN.role_name if user else False
 
     async def is_admin_or_higher(self, user_id: int) -> bool:
-        """Check if user is admin or superadmin"""
+        """Check if user is admin or superadmin."""
         user = await self.get_user(user_id)
         if not user:
             return False
@@ -448,10 +598,9 @@ class AsyncUserDatabase:
             return False
 
     async def can_manage_user(self, manager_id: int, target_id: int) -> bool:
-        """Check if manager can manage target user"""
+        """Check if manager can manage target user."""
         manager = await self.get_user(manager_id)
         target = await self.get_user(target_id)
-
         if not manager or not target:
             return False
 
@@ -463,158 +612,115 @@ class AsyncUserDatabase:
             return False
 
     async def get_all_users(self, active_only: bool = False) -> list[User]:
-        """Get all users, optionally filtering by active status, sorted by creation date, newest first"""
+        """Get all users, optionally filtering by active status."""
         try:
-            async with self.get_connection() as conn:
-                query = "SELECT * FROM users"
-                params = []
-
+            async with self.get_session() as session:
+                statement = select(UserRecord)
                 if active_only:
-                    query += " WHERE is_active = ?"
-                    params.append(True)
-
-                query += " ORDER BY created_at DESC"
-
-                async with conn.execute(query, params) as cursor:
-                    rows = await cursor.fetchall()
-                    return [self._row_to_user(dict(row)) for row in rows]
-
+                    statement = statement.where(UserRecord.is_active.is_(True))
+                statement = statement.order_by(col(UserRecord.created_at).desc())
+                result = session.exec(statement)
+                return [
+                    self._user_record_to_dataclass(record) for record in result.all()
+                ]
         except Exception as e:
             self.logger.error(f"Error retrieving all users: {e}")
             raise DatabaseError(f"Failed to retrieve users: {e}")
 
-    async def get_users_by_role(self, role: Union[str, UserRole]) -> List[User]:
-        """Get users by their role"""
+    async def get_users_by_role(self, role: str | UserRole) -> list[User]:
+        """Get active users by their role."""
         role_name = role.role_name if isinstance(role, UserRole) else role
-
         try:
-            async with self.get_connection() as conn:
-                async with conn.execute(
-                    "SELECT * FROM users WHERE user_role = ? AND is_active = ? ORDER BY created_at DESC",
-                    (role_name, True),
-                ) as cursor:
-                    rows = await cursor.fetchall()
-                    return [self._row_to_user(dict(row)) for row in rows]
-
+            async with self.get_session() as session:
+                result = session.exec(
+                    select(UserRecord)
+                    .where(
+                        UserRecord.user_role == role_name,
+                        UserRecord.is_active.is_(True),
+                    )
+                    .order_by(col(UserRecord.created_at).desc())
+                )
+                return [
+                    self._user_record_to_dataclass(record) for record in result.all()
+                ]
         except Exception as e:
             self.logger.error(f"Error retrieving users by role {role_name}: {e}")
             raise DatabaseError(f"Failed to retrieve users by role: {e}")
-
-    # Analytics Methods
 
     async def log_activity(
         self,
         user_id: int,
         activity_type: str,
-        activity_data: Optional[Dict[str, Any]] = None,
-        session_id: Optional[str] = None,
+        activity_data: dict[str, Any] | None = None,
+        session_id: str | None = None,
     ) -> bool:
-        """Log user activity for analytics"""
+        """Log user activity for analytics."""
         try:
-            async with self.get_connection() as conn:
-                # Start transaction
-                await conn.execute("BEGIN IMMEDIATE")
-
-                try:
-                    data_json = json.dumps(activity_data) if activity_data else None
-
-                    await conn.execute(
-                        """
-                        INSERT INTO user_activities
-                        (user_id, activity_type, activity_data, session_id)
-                        VALUES (?, ?, ?, ?)
-                    """,
-                        (user_id, activity_type, data_json, session_id),
+            async with self.get_session() as session:
+                now = datetime.now()
+                data_json = json.dumps(activity_data) if activity_data else None
+                session.add(
+                    UserActivityRecord(
+                        user_id=user_id,
+                        activity_type=activity_type,
+                        activity_data=data_json,
+                        session_id=session_id,
+                        timestamp=now,
                     )
+                )
 
-                    # Update user interaction timestamp and counters in single query
-                    now = datetime.now().isoformat()
+                values: dict[str, Any] = {
+                    "last_interaction": now,
+                    "last_seen": now,
+                    "updated_at": now,
+                }
+                if activity_type == "message":
+                    values["total_messages"] = UserRecord.total_messages + 1
+                elif activity_type == "command":
+                    values["total_commands"] = UserRecord.total_commands + 1
 
-                    if activity_type == "message":
-                        await conn.execute(
-                            """
-                            UPDATE users SET
-                                last_interaction = ?,
-                                last_seen = ?,
-                                total_messages = total_messages + 1,
-                                updated_at = ?
-                            WHERE user_id = ?
-                        """,
-                            (now, now, now, user_id),
-                        )
-                    elif activity_type == "command":
-                        await conn.execute(
-                            """
-                            UPDATE users SET
-                                last_interaction = ?,
-                                last_seen = ?,
-                                total_commands = total_commands + 1,
-                                updated_at = ?
-                            WHERE user_id = ?
-                        """,
-                            (now, now, now, user_id),
-                        )
-                    else:
-                        await conn.execute(
-                            """
-                            UPDATE users SET
-                                last_interaction = ?,
-                                last_seen = ?,
-                                updated_at = ?
-                            WHERE user_id = ?
-                        """,
-                            (now, now, now, user_id),
-                        )
-
-                    await conn.commit()
-                    return True
-
-                except Exception as e:
-                    await conn.rollback()
-                    raise e
-
+                session.exec(
+                    update(UserRecord)
+                    .where(UserRecord.user_id == user_id)
+                    .values(**values)
+                )
+                session.commit()
+                return True
         except Exception as e:
             self.logger.error(f"Error logging activity for user {user_id}: {e}")
             return False
 
     async def get_user_activity_stats(
         self, user_id: int, days: int = 30
-    ) -> Dict[str, Any]:
-        """Get user activity statistics"""
+    ) -> dict[str, Any]:
+        """Get user activity statistics."""
         try:
-            async with self.get_connection() as conn:
+            async with self.get_session() as session:
                 since_date = datetime.now() - timedelta(days=days)
 
-                # Activity breakdown
-                async with conn.execute(
-                    """
-                    SELECT activity_type, COUNT(*) as count
-                    FROM user_activities
-                    WHERE user_id = ? AND timestamp >= ?
-                    GROUP BY activity_type
-                """,
-                    (user_id, since_date.isoformat()),
-                ) as cursor:
-                    activity_breakdown = {
-                        row[0]: row[1] for row in await cursor.fetchall()
-                    }
+                activity_result = session.exec(
+                    select(UserActivityRecord.activity_type, func.count())
+                    .where(
+                        UserActivityRecord.user_id == user_id,
+                        UserActivityRecord.timestamp >= since_date,
+                    )
+                    .group_by(UserActivityRecord.activity_type)
+                )
+                activity_breakdown = {row[0]: row[1] for row in activity_result.all()}
 
-                # Daily activity
-                async with conn.execute(
-                    """
-                    SELECT DATE(timestamp) as date, COUNT(*) as count
-                    FROM user_activities
-                    WHERE user_id = ? AND timestamp >= ?
-                    GROUP BY DATE(timestamp)
-                    ORDER BY date DESC
-                """,
-                    (user_id, since_date.isoformat()),
-                ) as cursor:
-                    daily_activity = {row[0]: row[1] for row in await cursor.fetchall()}
+                date_expr = func.date(UserActivityRecord.timestamp)
+                daily_result = session.exec(
+                    select(date_expr, func.count())
+                    .where(
+                        UserActivityRecord.user_id == user_id,
+                        UserActivityRecord.timestamp >= since_date,
+                    )
+                    .group_by(date_expr)
+                    .order_by(date_expr.desc())
+                )
+                daily_activity = {row[0]: row[1] for row in daily_result.all()}
 
-                # Get user totals
                 user = await self.get_user(user_id)
-
                 return {
                     "user_id": user_id,
                     "period_days": days,
@@ -629,7 +735,6 @@ class AsyncUserDatabase:
                     if user and user.last_interaction
                     else None,
                 }
-
         except Exception as e:
             self.logger.error(f"Error getting activity stats for user {user_id}: {e}")
             raise DatabaseError(f"Failed to get activity stats: {e}")
@@ -637,115 +742,111 @@ class AsyncUserDatabase:
     async def get_message_activity_user_stats(
         self, user_id: int, days: int = 30
     ) -> list[dict[str, Any]]:
-        """Get user message activity statistics with activity data breakdown for each day"""
+        """Get user message activity statistics grouped by day."""
         try:
-            async with self.get_connection() as conn:
+            async with self.get_session() as session:
                 since_date = datetime.now() - timedelta(days=days)
+                date_expr = func.date(UserActivityRecord.timestamp)
+                result = session.exec(
+                    select(date_expr, func.count(), UserActivityRecord.activity_data)
+                    .where(
+                        UserActivityRecord.user_id == user_id,
+                        UserActivityRecord.activity_type == "message",
+                        UserActivityRecord.timestamp >= since_date,
+                    )
+                    .group_by(date_expr)
+                    .order_by(date_expr.desc())
+                )
 
-                # Message breakdown
-                async with conn.execute(
-                    """
-                    SELECT DATE(timestamp) as date, COUNT(*) as count, activity_data
-                    FROM user_activities
-                    WHERE user_id = ? AND activity_type = 'message' AND timestamp >= ?
-                    GROUP BY DATE(timestamp)
-                    ORDER BY date DESC
-                """,
-                    (user_id, since_date.isoformat()),
-                ) as cursor:
-                    message_stats: list[dict[str, Any]] = []
-                    for row in await cursor.fetchall():
-                        try:
-                            data = json.loads(row[2]) if row[2] else {}
-                        except json.JSONDecodeError:
-                            data = {}
-                        message_stats.append(
-                            {"date": row[0], "count": row[1], "activity_data": data}
-                        )
+                message_stats: list[dict[str, Any]] = []
+                for row in result.all():
+                    try:
+                        data = json.loads(row[2]) if row[2] else {}
+                    except json.JSONDecodeError:
+                        data = {}
+                    message_stats.append(
+                        {"date": row[0], "count": row[1], "activity_data": data}
+                    )
                 return message_stats
-
         except Exception as e:
             self.logger.error(f"Error getting message stats for user {user_id}: {e}")
             raise DatabaseError(f"Failed to get message stats: {e}")
 
-    async def get_bot_analytics(self, days: int = 30) -> Dict[str, Any]:
-        """Get comprehensive bot analytics"""
+    async def get_bot_analytics(self, days: int = 30) -> dict[str, Any]:
+        """Get comprehensive bot analytics."""
         try:
-            async with self.get_connection() as conn:
+            async with self.get_session() as session:
                 since_date = datetime.now() - timedelta(days=days)
 
-                # Total users
-                async with conn.execute(
-                    "SELECT COUNT(*) FROM users WHERE is_active = 1"
-                ) as cursor:
-                    total_active_users = (await cursor.fetchone())[0]
+                total_active_users = (
+                    session.exec(
+                        select(func.count())
+                        .select_from(UserRecord)
+                        .where(UserRecord.is_active.is_(True))
+                    )
+                ).one()
 
-                # New users in period
-                async with conn.execute(
-                    "SELECT COUNT(*) FROM users WHERE created_at >= ?",
-                    (since_date.isoformat(),),
-                ) as cursor:
-                    new_users = (await cursor.fetchone())[0]
+                new_users = (
+                    session.exec(
+                        select(func.count())
+                        .select_from(UserRecord)
+                        .where(UserRecord.created_at >= since_date)
+                    )
+                ).one()
 
-                # Active users in period
-                async with conn.execute(
-                    """
-                    SELECT COUNT(DISTINCT user_id) FROM user_activities
-                    WHERE timestamp >= ?
-                """,
-                    (since_date.isoformat(),),
-                ) as cursor:
-                    active_users_period = (await cursor.fetchone())[0]
+                active_users_period = (
+                    session.exec(
+                        select(
+                            func.count(func.distinct(UserActivityRecord.user_id))
+                        ).where(UserActivityRecord.timestamp >= since_date)
+                    )
+                ).one()
 
-                # Most active users
-                async with conn.execute(
-                    """
-                    SELECT u.user_id, u.username, u.first_name, COUNT(a.id) as activity_count
-                    FROM users u
-                    LEFT JOIN user_activities a ON u.user_id = a.user_id
-                    WHERE a.timestamp >= ? OR a.timestamp IS NULL
-                    GROUP BY u.user_id
-                    ORDER BY activity_count DESC
-                    LIMIT 10
-                """,
-                    (since_date.isoformat(),),
-                ) as cursor:
-                    top_users = []
-                    for row in await cursor.fetchall():
-                        top_users.append(
-                            {
-                                "user_id": row[0],
-                                "username": row[1],
-                                "name": row[2],
-                                "activity_count": row[3],
-                            }
+                top_result = session.exec(
+                    select(
+                        UserRecord.user_id,
+                        UserRecord.username,
+                        UserRecord.first_name,
+                        func.count(UserActivityRecord.id),
+                    )
+                    .outerjoin(
+                        UserActivityRecord,
+                        UserRecord.user_id == UserActivityRecord.user_id,
+                    )
+                    .where(
+                        or_(
+                            UserActivityRecord.timestamp >= since_date,
+                            UserActivityRecord.timestamp.is_(None),
                         )
-
-                # Activity by type
-                async with conn.execute(
-                    """
-                    SELECT activity_type, COUNT(*) as count
-                    FROM user_activities
-                    WHERE timestamp >= ?
-                    GROUP BY activity_type
-                    ORDER BY count DESC
-                """,
-                    (since_date.isoformat(),),
-                ) as cursor:
-                    activity_breakdown = {
-                        row[0]: row[1] for row in await cursor.fetchall()
+                    )
+                    .group_by(UserRecord.user_id)
+                    .order_by(func.count(UserActivityRecord.id).desc())
+                    .limit(10)
+                )
+                top_users = [
+                    {
+                        "user_id": row[0],
+                        "username": row[1],
+                        "name": row[2],
+                        "activity_count": row[3],
                     }
+                    for row in top_result.all()
+                ]
 
-                # Role distribution
-                async with conn.execute("""
-                    SELECT user_role, COUNT(*) as count
-                    FROM users
-                    WHERE is_active = 1
-                    GROUP BY user_role
-                """) as cursor:
-                    role_distribution = {
-                        row[0]: row[1] for row in await cursor.fetchall()
-                    }
+                activity_result = session.exec(
+                    select(UserActivityRecord.activity_type, func.count())
+                    .where(UserActivityRecord.timestamp >= since_date)
+                    .group_by(UserActivityRecord.activity_type)
+                    .order_by(func.count().desc())
+                )
+                activity_breakdown = {row[0]: row[1] for row in activity_result.all()}
+
+                role_result = session.exec(
+                    select(UserRecord.user_role, func.count())
+                    .where(UserRecord.is_active.is_(True))
+                    .group_by(UserRecord.user_role)
+                )
+                role_distribution = {row[0]: row[1] for row in role_result.all()}
 
                 return {
                     "period_days": days,
@@ -757,267 +858,137 @@ class AsyncUserDatabase:
                     "role_distribution": role_distribution,
                     "generated_at": datetime.now().isoformat(),
                 }
-
         except Exception as e:
             self.logger.error(f"Error getting bot analytics: {e}")
             raise DatabaseError(f"Failed to get bot analytics: {e}")
 
-    async def get_command_usage_stats(self, days: int = 30) -> Dict[str, int]:
-        """Get command usage statistics"""
+    async def get_command_usage_stats(self, days: int = 30) -> dict[str, int]:
+        """Get command usage statistics."""
         try:
-            async with self.get_connection() as conn:
+            async with self.get_session() as session:
                 since_date = datetime.now() - timedelta(days=days)
+                result = session.exec(
+                    select(UserActivityRecord.activity_data, func.count())
+                    .where(
+                        UserActivityRecord.activity_type == "command",
+                        UserActivityRecord.timestamp >= since_date,
+                        UserActivityRecord.activity_data.is_not(None),
+                    )
+                    .group_by(UserActivityRecord.activity_data)
+                    .order_by(func.count().desc())
+                )
 
-                async with conn.execute(
-                    """
-                    SELECT activity_data, COUNT(*) as count
-                    FROM user_activities
-                    WHERE activity_type = 'command'
-                    AND timestamp >= ?
-                    AND activity_data IS NOT NULL
-                    GROUP BY activity_data
-                    ORDER BY count DESC
-                """,
-                    (since_date.isoformat(),),
-                ) as cursor:
-                    command_stats = {}
-                    for row in await cursor.fetchall():
-                        try:
-                            data = json.loads(row[0])
-                            command = data.get("command", "unknown")
-                            command_stats[command] = row[1]
-                        except json.JSONDecodeError:
-                            continue
-
-                    return command_stats
-
+                command_stats: dict[str, int] = {}
+                for row in result.all():
+                    try:
+                        data = json.loads(row[0])
+                        command_name = data.get("command", "unknown")
+                        command_stats[command_name] = row[1]
+                    except json.JSONDecodeError:
+                        continue
+                return command_stats
         except Exception as e:
             self.logger.error(f"Error getting command stats: {e}")
             return {}
 
-    # Utility Methods
-
-    @staticmethod
-    def _row_to_user(row_dict: Dict[str, Any]) -> User:
-        """Convert database row to User object"""
-        # Handle datetime fields
-        for field_name in [
-            "created_at",
-            "updated_at",
-            "last_seen",
-            "first_interaction",
-            "last_interaction",
-        ]:
-            if row_dict.get(field_name):
-                try:
-                    row_dict[field_name] = datetime.fromisoformat(row_dict[field_name])
-                except (ValueError, TypeError):
-                    row_dict[field_name] = None
-
-        # Handle JSON fields
-        if row_dict.get("settings"):
-            try:
-                row_dict["settings"] = json.loads(row_dict["settings"])
-            except json.JSONDecodeError:
-                row_dict["settings"] = {}
-
-        return User(**row_dict)
-
-    @staticmethod
-    def _row_to_chat_session(row_dict: dict[str, Any]) -> ChatSession:
-        """
-        Convert DB row dict to ChatSession dataclass. Safe-parse timestamps and JSON.
-        """
-        # Parse datetimes
-        for f in ("created_at", "last_activity", "ended_at", "deleted_at"):
-            if row_dict.get(f):
-                try:
-                    row_dict[f] = datetime.fromisoformat(row_dict[f])
-                except (ValueError, TypeError):
-                    row_dict[f] = None
-            else:
-                row_dict[f] = None
-
-        return ChatSession(
-            session_id=row_dict["session_id"],
-            user_id=int(row_dict["user_id"]),
-            name=row_dict.get("name") or "",
-            created_at=row_dict["created_at"] or datetime.now(),
-            last_activity=row_dict.get("last_activity"),
-            ended_at=row_dict.get("ended_at"),
-            deleted_at=row_dict.get("deleted_at"),
-            message_count=int(row_dict.get("message_count") or 0),
-        )
-
     async def get_user_count(self, active_only: bool = True) -> int:
-        """Get total number of users"""
+        """Get total number of users."""
         try:
-            async with self.get_connection() as conn:
-                query = "SELECT COUNT(*) FROM users"
-                params = []
-
+            async with self.get_session() as session:
+                statement = select(func.count()).select_from(UserRecord)
                 if active_only:
-                    query += " WHERE is_active = ?"
-                    params.append(True)
-
-                async with conn.execute(query, params) as cursor:
-                    result = await cursor.fetchone()
-                    return result[0]
-
+                    statement = statement.where(UserRecord.is_active.is_(True))
+                return (session.exec(statement)).one()
         except Exception as e:
             self.logger.error(f"Error counting users: {e}")
             raise DatabaseError(f"Failed to count users: {e}")
 
     async def cleanup_old_activities(self, days: int = 90) -> int:
-        """Clean up old activity records"""
+        """Clean up old activity records."""
         try:
-            async with self.get_connection() as conn:
+            async with self.get_session() as session:
                 cutoff_date = datetime.now() - timedelta(days=days)
-
-                cursor = await conn.execute(
-                    """
-                    DELETE FROM user_activities
-                    WHERE timestamp < ?
-                """,
-                    (cutoff_date.isoformat(),),
+                result = session.exec(
+                    delete(UserActivityRecord).where(
+                        UserActivityRecord.timestamp < cutoff_date
+                    )
                 )
-
-                deleted_count = cursor.rowcount
-                await conn.commit()
-
+                session.commit()
+                deleted_count = result.rowcount
                 self.logger.info(f"Cleaned up {deleted_count} old activity records")
                 return deleted_count
-
         except Exception as e:
             self.logger.error(f"Error cleaning up activities: {e}")
             return 0
 
     async def activate_user(self, target_user_id: int) -> bool:
-        """
-        Activate a user by setting is_active to True
-
-        Args:
-            target_user_id: The ID of the user to activate
-
-        Returns:
-            bool: True if the user was activated, False if the user was already active
-                 or didn't exist
-
-        Raises:
-            DatabaseError: If there's an error during the database operation
-        """
+        """Activate a user by setting is_active to True."""
         try:
-            async with self.get_connection() as conn:
-                await conn.execute("BEGIN IMMEDIATE")
-
-                try:
-                    cursor = await conn.execute(
-                        """
-                        UPDATE users
-                        SET is_active = 1,
-                            updated_at = ?
-                        WHERE user_id = ? AND is_active = 0
-                        """,
-                        (datetime.now().isoformat(), target_user_id),
+            async with self.get_session() as session:
+                result = session.exec(
+                    update(UserRecord)
+                    .where(
+                        UserRecord.user_id == target_user_id,
+                        UserRecord.is_active.is_(False),
                     )
-
-                    rows_affected = cursor.rowcount
-                    await conn.commit()
-
-                    if rows_affected > 0:
-                        self.logger.info(f"Activated user: {target_user_id}")
-                        return True
-                    return False
-
-                except Exception as e:
-                    await conn.rollback()
-                    raise e
-
+                    .values(is_active=True, updated_at=datetime.now())
+                )
+                session.commit()
+                if result.rowcount > 0:
+                    self.logger.info(f"Activated user: {target_user_id}")
+                    return True
+                return False
         except Exception as e:
             self.logger.error(f"Error activating user {target_user_id}: {e}")
             raise DatabaseError(f"Failed to activate user: {e}")
 
     async def deactivate_user(self, target_user_id: int) -> bool:
-        """
-        Deactivate a user by setting is_active to False
-
-        Args:
-            target_user_id: The ID of the user to deactivate
-
-        Returns:
-            bool: True if the user was deactivated, False if the user was already inactive
-                 or didn't exist
-
-        Raises:
-            DatabaseError: If there's an error during the database operation
-        """
+        """Deactivate a user by setting is_active to False."""
         try:
-            async with self.get_connection() as conn:
-                await conn.execute("BEGIN IMMEDIATE")
-
-                try:
-                    cursor = await conn.execute(
-                        """
-                        UPDATE users
-                        SET is_active = 0,
-                            updated_at = ?
-                        WHERE user_id = ? AND is_active = 1
-                        """,
-                        (datetime.now().isoformat(), target_user_id),
+            async with self.get_session() as session:
+                result = session.exec(
+                    update(UserRecord)
+                    .where(
+                        UserRecord.user_id == target_user_id,
+                        UserRecord.is_active.is_(True),
                     )
-
-                    rows_affected = cursor.rowcount
-                    await conn.commit()
-
-                    if rows_affected > 0:
-                        self.logger.info(f"Deactivated user: {target_user_id}")
-                        return True
-                    return False
-
-                except Exception as e:
-                    await conn.rollback()
-                    raise e
-
+                    .values(is_active=False, updated_at=datetime.now())
+                )
+                session.commit()
+                if result.rowcount > 0:
+                    self.logger.info(f"Deactivated user: {target_user_id}")
+                    return True
+                return False
         except Exception as e:
             self.logger.error(f"Error deactivating user {target_user_id}: {e}")
             raise DatabaseError(f"Failed to deactivate user: {e}")
 
-    # Session methods
     async def create_chat_session(
         self, user_id: int, session_id: str, name: str | None = None
     ) -> str:
-        """
-        Create a new chat session owned by user_id and set it as user's current_session_id.
-        name defaults to human-readable EU date/time: "DD.MM.YYYY HH:MM"
-        Returns the new session_id.
-        """
-        if not name:
-            name = datetime.now().strftime("%d.%m.%Y %H:%M")
-        now_iso = datetime.now().isoformat()
-
+        """Create a new chat session and set it as current for the user."""
+        name = name or datetime.now().strftime("%d.%m.%Y %H:%M")
+        now = datetime.now()
         try:
-            async with self.get_connection() as conn:
-                await conn.execute(
-                    """
-                    INSERT INTO chat_sessions
-                    (session_id, user_id, name, created_at)
-                    VALUES (?, ?, ?, ?)
-                    """,
-                    (session_id, user_id, name, now_iso),
+            async with self.get_session() as session:
+                session.add(
+                    ChatSessionRecord(
+                        session_id=session_id,
+                        user_id=user_id,
+                        name=name,
+                        created_at=now,
+                    )
                 )
-
-                # Set session as current for the user
-                await conn.execute(
-                    "UPDATE users SET current_session_id = ?, updated_at = ? WHERE user_id = ?",
-                    (session_id, now_iso, user_id),
+                session.exec(
+                    update(UserRecord)
+                    .where(UserRecord.user_id == user_id)
+                    .values(current_session_id=session_id, updated_at=now)
                 )
-
-                await conn.commit()
+                session.commit()
                 self.logger.info(
                     f"Created chat session {session_id} for user {user_id}"
                 )
                 return session_id
-
         except Exception as e:
             self.logger.error(f"Error creating chat session for user {user_id}: {e}")
             raise DatabaseError(f"Failed to create chat session: {e}")
@@ -1027,63 +998,48 @@ class AsyncUserDatabase:
     ) -> list[ChatSession]:
         """List sessions owned by a user."""
         try:
-            async with self.get_connection() as conn:
-                if include_deleted:
-                    query = "SELECT * FROM chat_sessions WHERE user_id = ? ORDER BY created_at DESC"
-                    params = (user_id,)
-                else:
-                    query = "SELECT * FROM chat_sessions WHERE user_id = ? AND deleted_at IS NULL ORDER BY created_at DESC"
-                    params = (user_id,)
-
-                async with conn.execute(query, params) as cursor:
-                    rows = await cursor.fetchall()
-                    return [self._row_to_chat_session(dict(row)) for row in rows]
-
+            async with self.get_session() as session:
+                statement = select(ChatSessionRecord).where(
+                    ChatSessionRecord.user_id == user_id
+                )
+                if not include_deleted:
+                    statement = statement.where(ChatSessionRecord.deleted_at.is_(None))
+                statement = statement.order_by(col(ChatSessionRecord.created_at).desc())
+                result = session.exec(statement)
+                return [
+                    self._chat_session_record_to_dataclass(record)
+                    for record in result.all()
+                ]
         except Exception as e:
             self.logger.error(f"Error listing chat sessions for user {user_id}: {e}")
             raise DatabaseError(f"Failed to list chat sessions: {e}")
 
     async def soft_delete_chat_session(self, user_id: int, session_id: str) -> bool:
-        """
-        Soft-delete a chat session by setting deleted_at = now().
-        Only the owner (user_id) can soft-delete their session.
-        If the deleted session was the user's current_session_id it will be cleared.
-        """
+        """Soft-delete a chat session and clear it if it is current."""
         try:
-            async with self.get_connection() as conn:
-                await conn.execute("BEGIN IMMEDIATE")
-                try:
-                    now_iso = datetime.now().isoformat()
-                    cursor = await conn.execute(
-                        "UPDATE chat_sessions SET deleted_at = ? WHERE session_id = ? AND user_id = ? AND deleted_at IS NULL",
-                        (now_iso, session_id, user_id),
+            async with self.get_session() as session:
+                now = datetime.now()
+                result = session.exec(
+                    update(ChatSessionRecord)
+                    .where(
+                        ChatSessionRecord.session_id == session_id,
+                        ChatSessionRecord.user_id == user_id,
+                        ChatSessionRecord.deleted_at.is_(None),
                     )
-                    rows_affected = cursor.rowcount
-
-                    # Clear current_session_id if needed
-                    async with conn.execute(
-                        "SELECT current_session_id FROM users WHERE user_id = ?",
-                        (user_id,),
-                    ) as cur:
-                        row = await cur.fetchone()
-                        if row and row[0] == session_id:
-                            await conn.execute(
-                                "UPDATE users SET current_session_id = NULL, updated_at = ? WHERE user_id = ?",
-                                (now_iso, user_id),
-                            )
-
-                    await conn.commit()
-                    if rows_affected > 0:
-                        self.logger.info(
-                            f"Soft-deleted chat session {session_id} for user {user_id}"
-                        )
-                        return True
-                    return False
-
-                except Exception:
-                    await conn.rollback()
-                    raise
-
+                    .values(deleted_at=now)
+                )
+                user = session.get(UserRecord, user_id)
+                if user and user.current_session_id == session_id:
+                    user.current_session_id = None
+                    user.updated_at = now
+                    session.add(user)
+                session.commit()
+                if result.rowcount > 0:
+                    self.logger.info(
+                        f"Soft-deleted chat session {session_id} for user {user_id}"
+                    )
+                    return True
+                return False
         except Exception as e:
             self.logger.error(
                 f"Error soft-deleting chat session {session_id} for user {user_id}: {e}"
@@ -1091,18 +1047,20 @@ class AsyncUserDatabase:
             return False
 
     async def restore_chat_session(self, user_id: int, session_id: str) -> bool:
-        """
-        Restore a previously soft-deleted chat session (set deleted_at = NULL).
-        Only owner may restore.
-        """
+        """Restore a previously soft-deleted chat session."""
         try:
-            async with self.get_connection() as conn:
-                cursor = await conn.execute(
-                    "UPDATE chat_sessions SET deleted_at = NULL WHERE session_id = ? AND user_id = ? AND deleted_at IS NOT NULL",
-                    (session_id, user_id),
+            async with self.get_session() as session:
+                result = session.exec(
+                    update(ChatSessionRecord)
+                    .where(
+                        ChatSessionRecord.session_id == session_id,
+                        ChatSessionRecord.user_id == user_id,
+                        ChatSessionRecord.deleted_at.is_not(None),
+                    )
+                    .values(deleted_at=None)
                 )
-                await conn.commit()
-                return cursor.rowcount > 0
+                session.commit()
+                return result.rowcount > 0
         except Exception as e:
             self.logger.error(
                 f"Error restoring chat session {session_id} for user {user_id}: {e}"
@@ -1110,26 +1068,25 @@ class AsyncUserDatabase:
             return False
 
     async def get_current_chat_session(self, user_id: int) -> ChatSession | None:
-        """
-        Return the current chat session for a user in a single query, only if it's not soft-deleted.
-        """
+        """Return the current chat session if it is not soft-deleted."""
         try:
-            async with self.get_connection() as conn:
-                async with conn.execute(
-                    """
-                        SELECT cs.*
-                        FROM users u
-                        JOIN chat_sessions cs ON u.current_session_id = cs.session_id
-                        WHERE u.user_id = ? AND cs.deleted_at IS NULL
-                        LIMIT 1
-                        """,
-                    (user_id,),
-                ) as cursor:
-                    row = await cursor.fetchone()
-                    if not row:
-                        return None
-                    return self._row_to_chat_session(dict(row))
-
+            async with self.get_session() as session:
+                result = session.exec(
+                    select(ChatSessionRecord)
+                    .join(
+                        UserRecord,
+                        UserRecord.current_session_id == ChatSessionRecord.session_id,
+                    )
+                    .where(
+                        UserRecord.user_id == user_id,
+                        ChatSessionRecord.deleted_at.is_(None),
+                    )
+                    .limit(1)
+                )
+                record = result.first()
+                return (
+                    self._chat_session_record_to_dataclass(record) if record else None
+                )
         except Exception as e:
             self.logger.error(f"Error fetching current session for user {user_id}: {e}")
             return None
@@ -1137,113 +1094,85 @@ class AsyncUserDatabase:
     async def update_chat_session_activity(
         self, session_id: str, message_count: int | None = None
     ) -> None:
-        """Update chat session last activity and message count"""
+        """Update chat session last activity and optionally message count."""
         try:
-            async with self.get_connection() as conn:
-                if message_count is None:
-                    await conn.execute(
-                        "UPDATE chat_sessions SET last_activity = ? WHERE session_id = ?",
-                        (datetime.now().isoformat(), session_id),
-                    )
-                else:
-                    await conn.execute(
-                        "UPDATE chat_sessions SET last_activity = ?, message_count = ? WHERE session_id = ?",
-                        (datetime.now().isoformat(), message_count, session_id),
-                    )
-                await conn.commit()
+            async with self.get_session() as session:
+                values: dict[str, Any] = {"last_activity": datetime.now()}
+                if message_count is not None:
+                    values["message_count"] = message_count
+                session.exec(
+                    update(ChatSessionRecord)
+                    .where(ChatSessionRecord.session_id == session_id)
+                    .values(**values)
+                )
+                session.commit()
         except Exception as e:
             self.logger.error(f"Error updating chat session activity: {e}")
 
     async def deactivate_old_current_sessions(self, minutes: int) -> list[int]:
-        """
-        Clear current_session_id for users whose current session has been inactive for more than 'minutes'
-        Returns ids of users affected.
-        """
+        """Clear current_session_id for users with inactive current sessions."""
         try:
-            async with self.get_connection() as conn:
-                cutoff_time: datetime = datetime.now() - timedelta(minutes=minutes)
-                cutoff_iso: str = cutoff_time.isoformat()
-
-                # Find users with inactive current sessions
-                async with conn.execute(
-                    """
-                    SELECT u.user_id
-                    FROM users u
-                    JOIN chat_sessions cs ON u.current_session_id = cs.session_id
-                    WHERE cs.last_activity < ? AND u.current_session_id IS NOT NULL
-                    """,
-                    (cutoff_iso,),
-                ) as cursor:
-                    rows = await cursor.fetchall()
-                    user_ids = [row[0] for row in rows]
-
+            async with self.get_session() as session:
+                cutoff_time = datetime.now() - timedelta(minutes=minutes)
+                result = session.exec(
+                    select(UserRecord.user_id)
+                    .join(
+                        ChatSessionRecord,
+                        UserRecord.current_session_id == ChatSessionRecord.session_id,
+                    )
+                    .where(
+                        ChatSessionRecord.last_activity < cutoff_time,
+                        UserRecord.current_session_id.is_not(None),
+                    )
+                )
+                user_ids = list(result.all())
                 if not user_ids:
                     return []
 
-                # Clear current_session_id for these users
-                await conn.execute(
-                    f"""
-                    UPDATE users
-                    SET current_session_id = NULL, updated_at = ?
-                    WHERE user_id IN ({",".join(["?"] * len(user_ids))})
-                    """,
-                    [datetime.now().isoformat()] + user_ids,
+                session.exec(
+                    update(UserRecord)
+                    .where(UserRecord.user_id.in_(user_ids))
+                    .values(current_session_id=None, updated_at=datetime.now())
                 )
-                await conn.commit()
+                session.commit()
                 self.logger.info(
                     f"Cleared current_session_id for users: {user_ids} due to inactivity"
                 )
                 return user_ids
-
         except Exception as e:
             self.logger.error(f"Error clearing old current user sessions: {e}")
             return []
 
     async def delete_empty_chat_sessions(self, days: int = 7) -> list[str]:
-        """
-        Permanently delete chat sessions that have no messages and were created more than 'days' ago.
-        Returns deleted session_ids.
-        """
+        """Permanently delete empty chat sessions older than the cutoff."""
         try:
-            async with self.get_connection() as conn:
-                cutoff_time: datetime = datetime.now() - timedelta(days=days)
-                cutoff_iso: str = cutoff_time.isoformat()
-
-                # Find empty sessions older than cutoff
-                async with conn.execute(
-                    """
-                    SELECT session_id
-                    FROM chat_sessions
-                    WHERE message_count = 0 AND created_at < ?
-                    """,
-                    (cutoff_iso,),
-                ) as cursor:
-                    rows = await cursor.fetchall()
-                    session_ids = [row[0] for row in rows]
-
+            async with self.get_session() as session:
+                cutoff_time = datetime.now() - timedelta(days=days)
+                result = session.exec(
+                    select(ChatSessionRecord.session_id).where(
+                        ChatSessionRecord.message_count == 0,
+                        ChatSessionRecord.created_at < cutoff_time,
+                    )
+                )
+                session_ids = list(result.all())
                 if not session_ids:
                     return []
 
-                # Delete these sessions
-                await conn.execute(
-                    f"""
-                    DELETE FROM chat_sessions
-                    WHERE session_id IN ({",".join(["?"] * len(session_ids))})
-                    """,
-                    session_ids,
+                session.exec(
+                    delete(ChatSessionRecord).where(
+                        ChatSessionRecord.session_id.in_(session_ids)
+                    )
                 )
-                await conn.commit()
+                session.commit()
                 self.logger.info(f"Permanently deleted empty sessions: {session_ids}")
                 return session_ids
-
         except Exception as e:
             self.logger.error(f"Error deleting empty chat sessions: {e}")
             return []
 
 
-# Helper functions for aiogram integration
-def create_user_from_telegram(telegram_user) -> User:
-    """Create User object from aiogram's Telegram User object"""
+def create_user_from_telegram(telegram_user: Any) -> User:
+    """Create User object from aiogram's Telegram User object."""
     return User(
         user_id=telegram_user.id,
         username=telegram_user.username,
@@ -1258,14 +1187,11 @@ def create_user_from_telegram(telegram_user) -> User:
     )
 
 
-# Example usage with analytics
-async def example_usage():
-    """Example of how to use the async database with analytics"""
-    # Initialize database
+async def example_usage() -> None:
+    """Example of how to use the async database with analytics."""
     db = AsyncUserDatabase("example_bot.db")
     await db.initialize()
 
-    # Create a superadmin user
     superadmin = User(
         user_id=123456789,
         username="superadmin",
@@ -1275,50 +1201,30 @@ async def example_usage():
     )
 
     await db.add_user(superadmin)
-
-    # Check if user is superadmin
     is_super = await db.is_superadmin(123456789)
     print(f"Is superadmin: {is_super}")
 
-    # Add small delays to prevent rapid concurrent access
     await asyncio.sleep(0.1)
-
-    # Log some activities
     await db.log_activity(123456789, "command", {"command": "/start"})
     await asyncio.sleep(0.1)
 
-    # Example: Deactivate the user
     deactivated = await db.deactivate_user(123456789)
     print(f"User deactivated: {deactivated}")
 
-    # Try to deactivate again (should return False as user is already inactive)
     deactivated_again = await db.deactivate_user(123456789)
     print(f"User deactivated again: {deactivated_again}")
 
-    # Example: Activate the user
     activated = await db.activate_user(123456789)
     print(f"User activated: {activated}")
 
-    # Log another activity after reactivation
     await db.log_activity(123456789, "message", {"text": "Hello bot, I'm back!"})
     await asyncio.sleep(0.1)
 
-    # Get analytics
     user_stats = await db.get_user_activity_stats(123456789)
     bot_analytics = await db.get_bot_analytics()
 
     print(f"User stats: {user_stats}")
     print(f"Bot analytics: {bot_analytics}")
-
-    # Clean up test database
-    import os
-
-    try:
-        os.remove("example_bot.db")
-        os.remove("example_bot.db-wal")
-        os.remove("example_bot.db-shm")
-    except FileNotFoundError:
-        pass
 
 
 if __name__ == "__main__":

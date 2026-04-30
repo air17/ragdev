@@ -105,7 +105,34 @@ requirements.txt  Project dependencies
 - `chat/const.py` — `SYSTEM_PROMPT` template
 - `project_management/const.py` — `PROJECTS` registry
 - `telegram_bot/middleware.py` — `DatabaseMiddleware`: RBAC, fail-open design
-- `telegram_bot/db.py` — `AsyncUserDatabase` + `MigrationManager`
+- `telegram_bot/db.py` — `AsyncUserDatabase` using SQLModel/SQLAlchemy + Alembic
+
+## Database Migrations
+
+The bot uses SQLite through SQLModel/SQLAlchemy, with Alembic as the migration
+system. `AsyncUserDatabase.initialize()` runs migrations on startup.
+
+For a fresh DB, either start the bot or run:
+
+```bash
+python3 -m alembic upgrade head
+```
+
+For an existing legacy DB from the old `MigrationManager` version 2, back up the
+DB first. On startup, the bot validates the existing tables and stamps Alembic to
+the current revision without recreating tables. The manual equivalent is:
+
+```bash
+python3 -m alembic stamp head
+```
+
+For future schema changes, edit the SQLModel models, generate and review a
+migration, then apply it:
+
+```bash
+python3 -m alembic revision --autogenerate -m "describe change"
+python3 -m alembic upgrade head
+```
 
 ## Testing
 

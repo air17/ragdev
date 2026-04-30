@@ -1,14 +1,17 @@
-import pytest
 import tempfile
+import asyncio
+import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import MagicMock
-import uuid
-import asyncio
 
-# Import the modules we're testing
+import pytest
+from sqlalchemy import create_engine, text
+from sqlmodel import update
+
 from telegram_bot.db import (
     AsyncUserDatabase,
+    ChatSessionRecord,
     User,
     UserRole,
     UserActivity,
@@ -68,6 +71,118 @@ def superadmin_user():
     )
 
 
+async def update_chat_session_fields(
+    database: AsyncUserDatabase, session_id: str, **values
+) -> None:
+    async with database.get_session() as session:
+        session.exec(
+            update(ChatSessionRecord)
+            .where(ChatSessionRecord.session_id == session_id)
+            .values(**values)
+        )
+        session.commit()
+
+
+def create_legacy_v2_database(db_path: str) -> None:
+    engine = create_engine(f"sqlite:///{db_path}")
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                CREATE TABLE schema_migrations (
+                    version INTEGER PRIMARY KEY,
+                    applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    description TEXT
+                )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                CREATE TABLE users (
+                    user_id INTEGER PRIMARY KEY,
+                    username TEXT,
+                    first_name TEXT,
+                    last_name TEXT,
+                    language_code TEXT,
+                    is_bot BOOLEAN DEFAULT FALSE,
+                    is_premium BOOLEAN,
+                    added_to_attachment_menu BOOLEAN,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    last_seen TIMESTAMP,
+                    is_active BOOLEAN DEFAULT TRUE,
+                    user_state TEXT,
+                    user_role TEXT DEFAULT 'user',
+                    settings TEXT DEFAULT '{}',
+                    total_messages INTEGER DEFAULT 0,
+                    total_commands INTEGER DEFAULT 0,
+                    first_interaction TIMESTAMP,
+                    last_interaction TIMESTAMP,
+                    current_session_id TEXT,
+                    UNIQUE(user_id)
+                )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                CREATE TABLE user_activities (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    activity_type TEXT NOT NULL,
+                    activity_data TEXT,
+                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    session_id TEXT,
+                    FOREIGN KEY (user_id) REFERENCES users (user_id) ON DELETE CASCADE
+                )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                CREATE TABLE chat_sessions (
+                    session_id TEXT PRIMARY KEY,
+                    user_id INTEGER NOT NULL,
+                    name TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    last_activity TIMESTAMP,
+                    deleted_at TIMESTAMP,
+                    message_count INTEGER DEFAULT 0,
+                    FOREIGN KEY (user_id) REFERENCES users (user_id) ON DELETE CASCADE
+                )
+                """
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO schema_migrations (version, description) "
+                "VALUES (1, 'Initial schema'), (2, 'Add chat_sessions')"
+            )
+        )
+        now = datetime.now().isoformat()
+        conn.execute(
+            text(
+                """
+                INSERT INTO users (
+                    user_id, username, first_name, created_at, updated_at,
+                    is_active, user_role, settings, total_messages,
+                    total_commands, first_interaction, last_interaction
+                )
+                VALUES (
+                    42, 'legacy', 'Legacy', :now, :now, 1, 'user',
+                    '{"theme": "legacy"}', 3, 2, :now, :now
+                )
+                """
+            ),
+            {"now": now},
+        )
+    engine.dispose()
+
+
 class TestUserRole:
     """Test UserRole enum functionality"""
 
@@ -105,6 +220,25 @@ class TestMigrationManager:
     @pytest.mark.asyncio
     async def test_current_version(self):
         assert MigrationManager.CURRENT_VERSION >= 1
+
+    @pytest.mark.asyncio
+    async def test_initialize_stamps_legacy_v2_database(self, temp_db_path):
+        create_legacy_v2_database(temp_db_path)
+
+        db = AsyncUserDatabase(temp_db_path)
+        await db.initialize()
+
+        user = await db.get_user(42)
+        assert user is not None
+        assert user.username == "legacy"
+        assert user.settings == {"theme": "legacy"}
+        assert user.total_messages == 3
+
+        engine = create_engine(f"sqlite:///{temp_db_path}")
+        with engine.connect() as conn:
+            revision = conn.execute(text("SELECT version_num FROM alembic_version"))
+            assert revision.scalar_one() == "0001_current_schema"
+        engine.dispose()
 
 
 class TestAsyncUserDatabase:
@@ -460,16 +594,10 @@ class TestAsyncUserDatabase:
         old_time = datetime.now() - timedelta(minutes=45)  # 45 minutes ago
         recent_time = datetime.now() - timedelta(minutes=15)  # 15 minutes ago
 
-        async with database.get_connection() as conn:
-            await conn.execute(
-                "UPDATE chat_sessions SET last_activity = ? WHERE session_id = ?",
-                (old_time.isoformat(), session_id_1),
-            )
-            await conn.execute(
-                "UPDATE chat_sessions SET last_activity = ? WHERE session_id = ?",
-                (recent_time.isoformat(), session_id_2),
-            )
-            await conn.commit()
+        await update_chat_session_fields(database, session_id_1, last_activity=old_time)
+        await update_chat_session_fields(
+            database, session_id_2, last_activity=recent_time
+        )
 
         # Test with 30 minute cutoff - session 1 should be deactivated
         result = await database.deactivate_old_current_sessions(30)
@@ -519,16 +647,10 @@ class TestAsyncUserDatabase:
         old_time = datetime.now() - timedelta(minutes=60)  # 1 hour ago
         recent_time = datetime.now() - timedelta(minutes=10)  # 10 minutes ago
 
-        async with database.get_connection() as conn:
-            await conn.execute(
-                "UPDATE chat_sessions SET last_activity = ? WHERE session_id = ?",
-                (old_time.isoformat(), session_id_1),
-            )
-            await conn.execute(
-                "UPDATE chat_sessions SET last_activity = ? WHERE session_id = ?",
-                (recent_time.isoformat(), session_id_2),
-            )
-            await conn.commit()
+        await update_chat_session_fields(database, session_id_1, last_activity=old_time)
+        await update_chat_session_fields(
+            database, session_id_2, last_activity=recent_time
+        )
 
         # Test with 30 minute cutoff
         result = await database.deactivate_old_current_sessions(30)
@@ -599,12 +721,9 @@ class TestAsyncUserDatabase:
         cutoff_minutes = 30
         exact_cutoff_time = datetime.now() - timedelta(minutes=cutoff_minutes)
 
-        async with database.get_connection() as conn:
-            await conn.execute(
-                "UPDATE chat_sessions SET last_activity = ? WHERE session_id = ?",
-                (exact_cutoff_time.isoformat(), session_id),
-            )
-            await conn.commit()
+        await update_chat_session_fields(
+            database, session_id, last_activity=exact_cutoff_time
+        )
 
         # Test with 30 minute cutoff
         result = await database.deactivate_old_current_sessions(cutoff_minutes)
@@ -634,12 +753,7 @@ class TestAsyncUserDatabase:
         )
 
         old_time = datetime.now() - timedelta(minutes=60)
-        async with database.get_connection() as conn:
-            await conn.execute(
-                "UPDATE chat_sessions SET last_activity = ? WHERE session_id = ?",
-                (old_time.isoformat(), session_id),
-            )
-            await conn.commit()
+        await update_chat_session_fields(database, session_id, last_activity=old_time)
 
         # Wait a moment to ensure timestamp difference
         await asyncio.sleep(0.1)
@@ -671,13 +785,10 @@ class TestAsyncUserDatabase:
 
         # Set all sessions to have the same old activity time
         old_time = datetime.now() - timedelta(minutes=45)
-        async with database.get_connection() as conn:
-            for session_id in session_ids:
-                await conn.execute(
-                    "UPDATE chat_sessions SET last_activity = ? WHERE session_id = ?",
-                    (old_time.isoformat(), session_id),
-                )
-            await conn.commit()
+        for session_id in session_ids:
+            await update_chat_session_fields(
+                database, session_id, last_activity=old_time
+            )
 
         # Test with 30 minute cutoff - all should be deactivated
         result = await database.deactivate_old_current_sessions(30)
@@ -734,28 +845,24 @@ class TestAsyncUserDatabase:
         recent_time_1 = datetime.now() - timedelta(days=3)
         recent_time_2 = datetime.now() - timedelta(days=2)
 
-        async with database.get_connection() as conn:
-            # Set old empty session creation time
-            await conn.execute(
-                "UPDATE chat_sessions SET created_at = ? WHERE session_id = ?",
-                (old_time.isoformat(), old_empty_session_id),
-            )
-            # Set recent empty session creation time
-            await conn.execute(
-                "UPDATE chat_sessions SET created_at = ? WHERE session_id = ?",
-                (recent_time_1.isoformat(), recent_empty_session_id),
-            )
-            # Set old session with messages creation time and add message count
-            await conn.execute(
-                "UPDATE chat_sessions SET created_at = ?, message_count = 5 WHERE session_id = ?",
-                (very_old_time.isoformat(), old_session_with_messages_id),
-            )
-            # Set recent session with messages creation time and add message count
-            await conn.execute(
-                "UPDATE chat_sessions SET created_at = ?, message_count = 3 WHERE session_id = ?",
-                (recent_time_2.isoformat(), recent_session_with_messages_id),
-            )
-            await conn.commit()
+        await update_chat_session_fields(
+            database, old_empty_session_id, created_at=old_time
+        )
+        await update_chat_session_fields(
+            database, recent_empty_session_id, created_at=recent_time_1
+        )
+        await update_chat_session_fields(
+            database,
+            old_session_with_messages_id,
+            created_at=very_old_time,
+            message_count=5,
+        )
+        await update_chat_session_fields(
+            database,
+            recent_session_with_messages_id,
+            created_at=recent_time_2,
+            message_count=3,
+        )
 
         # Test with 7 days cutoff - should only delete old empty session
         deleted_sessions = await database.delete_empty_chat_sessions(days=7)
@@ -802,12 +909,9 @@ class TestAsyncUserDatabase:
 
         # Set old creation time and add messages
         old_time = datetime.now() - timedelta(days=10)
-        async with database.get_connection() as conn:
-            await conn.execute(
-                "UPDATE chat_sessions SET created_at = ?, message_count = 5 WHERE session_id = ?",
-                (old_time.isoformat(), session_id),
-            )
-            await conn.commit()
+        await update_chat_session_fields(
+            database, session_id, created_at=old_time, message_count=5
+        )
 
         # Should not delete any sessions
         deleted_sessions = await database.delete_empty_chat_sessions(days=7)
@@ -854,24 +958,24 @@ class TestAsyncUserDatabase:
         old_time = datetime.now() - timedelta(days=8)
         recent_time = datetime.now() - timedelta(days=3)
 
-        async with database.get_connection() as conn:
-            await conn.execute(
-                "UPDATE chat_sessions SET created_at = ? WHERE session_id = ?",
-                (old_time.isoformat(), old_empty_session_id),
-            )
-            await conn.execute(
-                "UPDATE chat_sessions SET created_at = ? WHERE session_id = ?",
-                (recent_time.isoformat(), recent_empty_session_id),
-            )
-            await conn.execute(
-                "UPDATE chat_sessions SET created_at = ?, message_count = 5 WHERE session_id = ?",
-                (old_time.isoformat(), old_session_with_messages_id),
-            )
-            await conn.execute(
-                "UPDATE chat_sessions SET created_at = ?, message_count = 3 WHERE session_id = ?",
-                (recent_time.isoformat(), recent_session_with_messages_id),
-            )
-            await conn.commit()
+        await update_chat_session_fields(
+            database, old_empty_session_id, created_at=old_time
+        )
+        await update_chat_session_fields(
+            database, recent_empty_session_id, created_at=recent_time
+        )
+        await update_chat_session_fields(
+            database,
+            old_session_with_messages_id,
+            created_at=old_time,
+            message_count=5,
+        )
+        await update_chat_session_fields(
+            database,
+            recent_session_with_messages_id,
+            created_at=recent_time,
+            message_count=3,
+        )
 
         # Test with 7 days cutoff - should delete old empty session and keep others
         deleted_sessions = await database.delete_empty_chat_sessions(days=7)
