@@ -147,7 +147,12 @@ def get_current_branch(
     """
     repo = Repo(repo_dir)
     # adding main repo branch name
-    branches_names: list[str] = ["Main repo: " + repo.active_branch.name]
+    try:
+        main_branch: str = repo.active_branch.name
+        branches_names: list[str] = ["Main repo: " + main_branch]
+    except (ValueError, TypeError) as e:
+        # Handle case when main repo is in detached HEAD state
+        branches_names = [f"Main repo error: {e}"]
 
     # adding submodules branch names
     for submodule_name in submodule_names:

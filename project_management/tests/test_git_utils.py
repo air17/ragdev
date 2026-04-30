@@ -350,11 +350,26 @@ class TestGetCurrentBranch:
         with pytest.raises(Exception):
             get_current_branch("/not-a-repo")
 
-    @patch("project_management.git_utils.Repo", side_effect=ValueError("Detached HEAD"))
-    def test_get_current_branch_detached_head(self, mock_repo_class):
-        # Assert raises ValueError
-        with pytest.raises(ValueError):
-            get_current_branch("/repo")
+    @patch("project_management.git_utils.Repo")
+    def test_get_current_branch_detached_head_main_repo(self, mock_repo_class):
+        # Arrange: main repo raises TypeError for detached HEAD
+        mock_repo = Mock()
+        mock_repo.active_branch.name  # access triggers the property
+        type(mock_repo).active_branch = property(
+            lambda self: (_ for _ in ()).throw(
+                TypeError(
+                    "HEAD is a detached symbolic reference as it points to 'abc123'"
+                )
+            )
+        )
+        mock_repo_class.return_value = mock_repo
+
+        # Act
+        result = get_current_branch("/repo")
+
+        # Assert: should not raise, should contain error info
+        assert "Main repo error:" in result
+        assert "detached" in result.lower() or "abc123" in result
 
 
 class TestGetAllBranches:
