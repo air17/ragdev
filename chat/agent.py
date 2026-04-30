@@ -232,8 +232,14 @@ class ChatAgent:
         )
         iterations: int = 0
         while True:
+            completion_kwargs: dict[str, object] = {
+                "model": self.model,
+                "messages": self.messages,
+            }
+            if iterations < self.max_iterations:
+                completion_kwargs["tools"] = self.tools
             response: ChatCompletion = self.deepseek.chat.completions.create(
-                model=self.model, messages=self.messages, tools=self.tools
+                **completion_kwargs
             )
             new_assistant_message: ChatCompletionMessage = response.choices[0].message
             print(
