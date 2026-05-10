@@ -9,7 +9,7 @@ def test_chat_agent_initialization():
     agent = ChatAgent(project_dir="/test/project")
     assert agent.project_dir == "/test/project"
     assert agent.messages == []
-    assert agent.model == "deepseek-v4-pro"
+    assert agent.model == "deepseek-v4-flash"
 
 
 def test_chat_agent_with_session():
