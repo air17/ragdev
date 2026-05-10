@@ -1,0 +1,54 @@
+from unittest.mock import MagicMock, patch
+
+from agent_tools.llms import query_deepseek
+
+
+@patch("agent_tools.llms.deepseek_client")
+def test_query_deepseek_uses_v4_flash_by_default(mock_client):
+    mock_response = MagicMock()
+    mock_response.choices = [MagicMock(message=MagicMock(content="ok"))]
+    mock_client.chat.completions.create.return_value = mock_response
+
+    result = query_deepseek("hello")
+
+    assert result == "ok"
+    assert mock_client.chat.completions.create.call_args.kwargs["model"] == (
+        "deepseek-v4-flash"
+    )
+
+
+@patch("agent_tools.llms.deepseek_client")
+def test_query_deepseek_thinking_disabled(mock_client):
+    mock_response = MagicMock()
+    mock_response.choices = [MagicMock(message=MagicMock(content="ok"))]
+    mock_client.chat.completions.create.return_value = mock_response
+
+    query_deepseek("hello", thinking=False)
+
+    call_kwargs = mock_client.chat.completions.create.call_args.kwargs
+    assert call_kwargs["extra_body"] == {"thinking": {"type": "disabled"}}
+
+
+@patch("agent_tools.llms.deepseek_client")
+def test_query_deepseek_thinking_enabled_by_default(mock_client):
+    mock_response = MagicMock()
+    mock_response.choices = [MagicMock(message=MagicMock(content="ok"))]
+    mock_client.chat.completions.create.return_value = mock_response
+
+    query_deepseek("hello")
+
+    call_kwargs = mock_client.chat.completions.create.call_args.kwargs
+    assert call_kwargs["extra_body"] == {"thinking": {"type": "enabled"}}
+
+
+@patch("agent_tools.llms.deepseek_client")
+def test_query_deepseek_accepts_v4_flash(mock_client):
+    mock_response = MagicMock()
+    mock_response.choices = [MagicMock(message=MagicMock(content="ok"))]
+    mock_client.chat.completions.create.return_value = mock_response
+
+    query_deepseek("hello", model="deepseek-v4-flash")
+
+    assert mock_client.chat.completions.create.call_args.kwargs["model"] == (
+        "deepseek-v4-flash"
+    )

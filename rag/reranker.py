@@ -68,7 +68,7 @@ def rerank_results(
     )
     documents: list[Document] = _results_to_documents(search_results)
     reranker = LLMListwiseRerank.from_llm(
-        llm=ChatDeepSeek(model="deepseek-chat"), top_n=max_results
+        llm=ChatDeepSeek(model="deepseek-v4-flash"), top_n=max_results
     )
     reranked_compressed_docs = reranker.compress_documents(documents, query)
     reranked_results = []

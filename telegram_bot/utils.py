@@ -27,7 +27,7 @@ def markdown_to_telegram_html_ai(md_text):
     )
     return remove_non_telegram_html(
         query_deepseek(
-            md_text, model="deepseek-chat", system_prompt=system_prompt
+            md_text, model="deepseek-v4-flash", system_prompt=system_prompt, thinking=False
         ).strip()
     )
 

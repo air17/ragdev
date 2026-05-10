@@ -9,7 +9,6 @@ from openai.types.chat import (
     ChatCompletionToolParam,
     ChatCompletionMessage,
     ChatCompletionToolMessageParam,
-    ChatCompletionAssistantMessageParam,
 )
 from openai.types.shared_params import FunctionDefinition
 
@@ -35,7 +34,7 @@ class ChatAgent:
         self,
         project_dir: str,
         api_key: str = DEEPSEEK_API_KEY,
-        model: str = "deepseek-chat",
+        model: str = "deepseek-v4-flash",
         max_iterations: int = 15,
         session_manager: ChatSessionManager | None = None,
         terminal_enabled: bool = False,
@@ -294,12 +293,23 @@ class ChatAgent:
                     yield final_response.content, "final"
                     return
 
+                # Build the assistant message dict; reasoning_content must be
+                # included when tool calls are present — the API returns 400
+                # if it is omitted in thinking mode (deepseek-v4-flash default).
+                assistant_msg: dict = {
+                    "role": "assistant",
+                    "content": new_assistant_message.content,
+                    "tool_calls": new_assistant_message.tool_calls,
+                }
+                reasoning_content: str | None = (
+                    new_assistant_message.reasoning_content
+                    if hasattr(new_assistant_message, "reasoning_content")
+                    else None
+                )
+                if reasoning_content:
+                    assistant_msg["reasoning_content"] = reasoning_content
                 self._append_message(
-                    ChatCompletionAssistantMessageParam(
-                        content=new_assistant_message.content,
-                        role="assistant",
-                        tool_calls=new_assistant_message.tool_calls,
-                    ),
+                    assistant_msg,
                     total_tokens=response.usage.total_tokens
                     if response.usage
                     else None,

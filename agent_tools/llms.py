@@ -16,8 +16,9 @@ deepseek_client = OpenAI(
 
 def query_deepseek(
     query: str,
-    model: Literal["deepseek-chat", "deepseek-reasoner"] = "deepseek-chat",
+    model: Literal["deepseek-v4-flash", "deepseek-v4-pro"] = "deepseek-v4-flash",
     system_prompt: str | None = None,
+    thinking: bool = True,
 ) -> str:
     messages: list = []
     if system_prompt:
@@ -25,10 +26,12 @@ def query_deepseek(
             ChatCompletionSystemMessageParam(content=system_prompt, role="system")
         )
     messages.append(ChatCompletionUserMessageParam(content=query, role="user"))
+    thinking_type = "enabled" if thinking else "disabled"
     return (
         deepseek_client.chat.completions.create(
             model=model,
             messages=messages,
+            extra_body={"thinking": {"type": thinking_type}},
         )
         .choices[0]
         .message.content

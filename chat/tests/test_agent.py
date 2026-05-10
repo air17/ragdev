@@ -9,6 +9,7 @@ def test_chat_agent_initialization():
     agent = ChatAgent(project_dir="/test/project")
     assert agent.project_dir == "/test/project"
     assert agent.messages == []
+    assert agent.model == "deepseek-v4-flash"
 
 
 def test_chat_agent_with_session():
@@ -76,6 +77,41 @@ def test_chat_agent_omits_tools_on_final_iteration(mock_openai):
     assert first_call_kwargs["tools"] == agent.tools
     assert "tools" not in final_call_kwargs
     assert agent.messages[-1]["role"] == "tool"
+
+
+@patch("chat.agent.OpenAI")
+def test_tool_call_assistant_message_includes_reasoning_content(mock_openai):
+    """reasoning_content must be forwarded to the API in tool-call turns (thinking mode)."""
+    mock_create = mock_openai.return_value.chat.completions.create
+
+    tool_call = MagicMock()
+    tool_call.id = "call_1"
+    tool_call.function.name = "list_dir"
+    tool_call.function.arguments = '{"path": "."}'
+
+    first_message = MagicMock()
+    first_message.content = None
+    first_message.tool_calls = [tool_call]
+    first_message.reasoning_content = "I should list the directory first."
+    first_response = MagicMock()
+    first_response.choices = [MagicMock(message=first_message)]
+    first_response.usage = MagicMock(total_tokens=10)
+
+    final_message = MagicMock()
+    final_message.content = "Done"
+    final_message.tool_calls = None
+    final_response = MagicMock()
+    final_response.choices = [MagicMock(message=final_message)]
+
+    mock_create.side_effect = [first_response, final_response]
+    agent = ChatAgent(project_dir="/test/project", api_key="test_key")
+
+    list(agent.get_deepseek_response_text("question"))
+
+    # The assistant message appended after the first tool call must carry reasoning_content
+    assistant_msgs = [m for m in agent.messages if m.get("role") == "assistant"]
+    assert len(assistant_msgs) == 1
+    assert assistant_msgs[0].get("reasoning_content") == "I should list the directory first."
 
 
 # ---------------------------------------------------------------------------
