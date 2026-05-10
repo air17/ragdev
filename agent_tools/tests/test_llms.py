@@ -40,6 +40,9 @@ def test_query_deepseek_thinking_enabled_by_default(mock_client):
     call_kwargs = mock_client.chat.completions.create.call_args.kwargs
     assert call_kwargs["extra_body"] == {"thinking": {"type": "enabled"}}
 
+
+@patch("agent_tools.llms.deepseek_client")
+def test_query_deepseek_accepts_v4_flash(mock_client):
     mock_response = MagicMock()
     mock_response.choices = [MagicMock(message=MagicMock(content="ok"))]
     mock_client.chat.completions.create.return_value = mock_response
