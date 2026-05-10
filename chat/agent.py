@@ -35,7 +35,7 @@ class ChatAgent:
         self,
         project_dir: str,
         api_key: str = DEEPSEEK_API_KEY,
-        model: str = "deepseek-chat",
+        model: str = "deepseek-v4-pro",
         max_iterations: int = 15,
         session_manager: ChatSessionManager | None = None,
         terminal_enabled: bool = False,

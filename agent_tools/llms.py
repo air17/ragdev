@@ -16,7 +16,7 @@ deepseek_client = OpenAI(
 
 def query_deepseek(
     query: str,
-    model: Literal["deepseek-chat", "deepseek-reasoner"] = "deepseek-chat",
+    model: Literal["deepseek-v4-flash", "deepseek-v4-pro"] = "deepseek-v4-pro",
     system_prompt: str | None = None,
 ) -> str:
     messages: list = []
