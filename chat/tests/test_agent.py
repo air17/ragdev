@@ -114,7 +114,9 @@ def test_tool_call_assistant_message_includes_reasoning_content(mock_openai):
     assert assistant_msgs[0].get("reasoning_content") == "I should list the directory first."
 
 
-
+# ---------------------------------------------------------------------------
+# Terminal tool presence / ordering
+# ---------------------------------------------------------------------------
 
 
 def test_terminal_absent_by_default():

@@ -301,8 +301,10 @@ class ChatAgent:
                     "content": new_assistant_message.content,
                     "tool_calls": new_assistant_message.tool_calls,
                 }
-                reasoning_content: str | None = getattr(
-                    new_assistant_message, "reasoning_content", None
+                reasoning_content: str | None = (
+                    new_assistant_message.reasoning_content
+                    if hasattr(new_assistant_message, "reasoning_content")
+                    else None
                 )
                 if reasoning_content:
                     assistant_msg["reasoning_content"] = reasoning_content
