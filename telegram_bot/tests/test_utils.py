@@ -13,3 +13,4 @@ def test_markdown_converter_uses_v4_flash(query_deepseek_mock, clean_html_mock):
 
     assert result == "<b>hello</b>"
     assert query_deepseek_mock.call_args.kwargs["model"] == "deepseek-v4-flash"
+    assert query_deepseek_mock.call_args.kwargs["thinking"] is False
