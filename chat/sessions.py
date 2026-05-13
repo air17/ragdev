@@ -137,23 +137,30 @@ class ChatSessionManager:
             logger.warning(f"Session file {p} does not exist and cannot be deleted.")
 
     def fix_messages_after_interruption(self) -> None:
-        """Cleans up all the messages after the last assistant message or deletes all messages if no assistant message exists."""
+        """Cleans up all the messages after the last complete assistant message.
+
+        A "complete" assistant message is one without ``tool_calls``.  Messages
+        that contain ``tool_calls`` require subsequent tool-response messages; if
+        those responses are absent (e.g. after a crash) the API returns 400.
+        If no complete assistant message exists, all messages are cleared.
+        """
         p: Path = self._path(self.active_session)
         data: type[TypedDict] = self.load_full(self.active_session)
         messages: list[type[TypedDict]] = data.get("messages", [])
         if not messages:
             return
-        # Find the index of the last assistant message
+        # Find the last assistant message that has no tool_calls (a final reply).
         last_assistant_index: int | None = None
         for i in range(len(messages) - 1, -1, -1):
-            if messages[i].get("role") == "assistant":
+            msg = messages[i]
+            if msg.get("role") == "assistant" and not msg.get("tool_calls"):
                 last_assistant_index = i
                 break
         if last_assistant_index is None:
-            # No assistant message found, clear all messages
+            # No complete assistant message found, clear all messages
             data["messages"] = []
         else:
-            # Retain messages up to and including the last assistant message
+            # Retain messages up to and including the last complete assistant message
             data["messages"] = messages[: last_assistant_index + 1]
         data.setdefault("meta", {})["updated_at"] = _now()
         self._write(p, data)

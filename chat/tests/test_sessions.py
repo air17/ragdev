@@ -174,3 +174,47 @@ def test_fix_messages_after_interruption():
         assert len(messages) == 4
         assert messages[-1]["role"] == "assistant"
         assert messages[-1]["content"] == "You're welcome!"
+
+        # Test case 5: Last assistant message has tool_calls (incomplete turn)
+        # The method must skip it and fall back to the previous complete assistant message.
+        session = ChatSessionManager(sessions_dir=temp_dir)
+        session_id_5 = "test-fix-messages-5"
+        session.create_session(session_id=session_id_5)
+        tool_call_interrupted = [
+            {"role": "user", "content": "Search for foo"},
+            {"role": "assistant", "content": "Sure!"},
+            {"role": "user", "content": "Now search for bar"},
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [{"id": "tc1", "function": {"name": "grep_search"}}],
+            },
+            # tool response is missing — interrupted here
+        ]
+        session.append_messages(tool_call_interrupted)
+        session.fix_messages_after_interruption()
+
+        # Should roll back to the last *complete* assistant message (index 1)
+        messages = session.get_messages()
+        assert len(messages) == 2
+        assert messages[-1]["role"] == "assistant"
+        assert messages[-1]["content"] == "Sure!"
+        assert not messages[-1].get("tool_calls")
+
+        # Test case 6: All assistant messages have tool_calls — clear everything
+        session = ChatSessionManager(sessions_dir=temp_dir)
+        session_id_6 = "test-fix-messages-6"
+        session.create_session(session_id=session_id_6)
+        all_tool_calls = [
+            {"role": "user", "content": "Do something"},
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [{"id": "tc2", "function": {"name": "grep_search"}}],
+            },
+        ]
+        session.append_messages(all_tool_calls)
+        session.fix_messages_after_interruption()
+
+        messages = session.get_messages()
+        assert len(messages) == 0
