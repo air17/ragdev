@@ -76,7 +76,8 @@ def test_chat_agent_omits_tools_on_final_iteration(mock_openai):
     final_call_kwargs = mock_create.call_args_list[1].kwargs
     assert first_call_kwargs["tools"] == agent.tools
     assert "tools" not in final_call_kwargs
-    assert agent.messages[-1]["role"] == "tool"
+    assert agent.messages[-1]["role"] == "assistant"
+    assert agent.messages[-1]["content"] == "Final answer"
 
 
 @patch("chat.agent.OpenAI")
@@ -110,8 +111,9 @@ def test_tool_call_assistant_message_includes_reasoning_content(mock_openai):
 
     # The assistant message appended after the first tool call must carry reasoning_content
     assistant_msgs = [m for m in agent.messages if m.get("role") == "assistant"]
-    assert len(assistant_msgs) == 1
+    assert len(assistant_msgs) == 2
     assert assistant_msgs[0].get("reasoning_content") == "I should list the directory first."
+    assert assistant_msgs[1]["content"] == "Done"
 
 
 # ---------------------------------------------------------------------------
