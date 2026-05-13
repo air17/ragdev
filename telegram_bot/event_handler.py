@@ -838,6 +838,11 @@ class BotEventHandler:
                 )
                 return
 
+            # Repair any interrupted tool-call turns from a previous crash/restart.
+            # If an assistant message with tool_calls has no following tool responses,
+            # the API returns 400 on the next request.
+            session_manager.fix_messages_after_interruption()
+
             self.cache.setdefault(self.ONGOING_GENERATION_CACHE_KEY, set()).add(user_id)
             self.cache.setdefault(self.STOP_GENERATION_CACHE_KEY, set()).discard(
                 user_id
