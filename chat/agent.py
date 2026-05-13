@@ -331,8 +331,27 @@ class ChatAgent:
                         )
                     )
             else:
-                # No tool calls, yield the response if it has content and return it
+                # No tool calls; persist and yield the final response.
+                # The message must be saved so fix_messages_after_interruption()
+                # can identify it as a complete assistant turn on the next request.
                 response_text: str = new_assistant_message.content
+                final_msg: dict = {
+                    "role": "assistant",
+                    "content": response_text,
+                }
+                final_reasoning: str | None = (
+                    new_assistant_message.reasoning_content
+                    if hasattr(new_assistant_message, "reasoning_content")
+                    else None
+                )
+                if final_reasoning:
+                    final_msg["reasoning_content"] = final_reasoning
+                self._append_message(
+                    final_msg,
+                    total_tokens=response.usage.total_tokens
+                    if response.usage
+                    else None,
+                )
                 yield response_text, "final"
                 return
 
